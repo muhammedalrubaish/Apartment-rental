@@ -514,12 +514,15 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 .cal-split { grid-template-columns: minmax(0, 1fr); }
 
 @media (min-width: 1024px) {
-    .cal-split {
-        grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-        align-items: start;
-    }
-    /* قائمة حجوزات الشهر لا تتجاوز ارتفاع التقويم إلا بتمرير داخلي */
-    #cal-month-list { max-height: 430px; overflow-y: auto; }
+    .cal-split { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+
+    /* بطاقة حجوزات الشهر تمتد لارتفاع التقويم تماماً (stretch الافتراضي)
+       فتتطابق حوافها معه مهما قلّ عدد الحجوزات */
+    .cal-split > .card:last-child { display: flex; flex-direction: column; }
+
+    /* القائمة تملأ ما تبقّى من البطاقة وتمرّر داخلياً عند الكثرة.
+       min-height: 0 ضروري وإلا رفض عنصر flex الانكماش دون محتواه */
+    #cal-month-list { flex: 1; min-height: 0; overflow-y: auto; }
 }
 
 .cal-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-dim); font-weight: 600; margin-top: 12px; }

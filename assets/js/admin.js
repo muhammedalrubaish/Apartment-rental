@@ -327,6 +327,9 @@
                 notifBooking: true, notifBills: true, notifMessages: true, notifCheckout: false,
             },
             rates: Object.assign({}, DEFAULT_RATES),
+            /* أرقام جهات اتصال حذفها المالك عمداً — تمنع مزامنة محادثات
+               الموقع من إعادة إنشائها عند كل تحميل للصفحة */
+            dismissedChatPhones: [],
             fees: JSON.parse(JSON.stringify(DEFAULT_FEES)),
             syncFeeds: [
                 { id: uid(), name: 'جاذر إن (Gathern)', url: '', lastSync: '' },
@@ -356,6 +359,7 @@
                 if (parsed && parsed.settings) {
                     // ترقية النسخ القديمة: أضيفت تقديرات المصاريف المتغيّرة لاحقاً
                     parsed.rates = Object.assign({}, DEFAULT_RATES, parsed.rates || {});
+                    parsed.dismissedChatPhones = parsed.dismissedChatPhones || [];
                     // ترقية: عمولة كل منصة على حدة أُضيفت لاحقاً
                     parsed.fees = parsed.fees || {};
                     FEE_PLATFORMS.forEach((k) => {
@@ -1557,6 +1561,26 @@
         renderMessages();
     }
 
+    /* جهة اتصال حذفها المالك لا تُعاد تلقائياً من محادثات الموقع */
+    function dismissChatPhone(phone) {
+        const p = String(phone || '').trim();
+        if (!p) return;
+        if (!state.dismissedChatPhones) state.dismissedChatPhones = [];
+        if (state.dismissedChatPhones.indexOf(p) === -1) state.dismissedChatPhones.push(p);
+    }
+
+    /* إضافة الرقم يدوياً من جديد تُلغي الاستبعاد */
+    function undismissChatPhone(phone) {
+        const p = String(phone || '').trim();
+        if (!p || !state.dismissedChatPhones) return;
+        state.dismissedChatPhones = state.dismissedChatPhones.filter((x) => x !== p);
+    }
+
+    function isDismissedChatPhone(phone) {
+        const p = String(phone || '').trim();
+        return !!p && (state.dismissedChatPhones || []).indexOf(p) !== -1;
+    }
+
     /* حفظ معلومات تسجيل دخول الزائر للمحادثة كجهة اتصال — تلقائياً وبلا تكرار */
     async function syncContactsFromConversations() {
         let added = 0;
@@ -1564,6 +1588,7 @@
         for (const c of msg.conversations) {
             if (!c.visitor_phone || !c.visitor_name) continue;
             if (state.contacts.some((x) => x.phone === c.visitor_phone)) continue;
+            if (isDismissedChatPhone(c.visitor_phone)) continue;   // حذفها المالك عمداً
 
             const contact = await createContact({
                 name: c.visitor_name,
@@ -2123,10 +2148,20 @@
         $$('[data-del-contact]').forEach((btn) => {
             const c = state.contacts.find((x) => x.id === btn.dataset.delContact);
             btn.addEventListener('click', async () => {
-                if (!confirm(`حذف جهة الاتصال «${c.name}»؟`)) return;
+                const fromChat = c.source === 'site_chat';
+                const warn = fromChat
+                    ? `حذف جهة الاتصال «${c.name}»؟
+لن تُعاد إضافتها تلقائياً من محادثات الموقع.`
+                    : `حذف جهة الاتصال «${c.name}»؟`;
+                if (!confirm(warn)) return;
+
                 const ok = await deleteContact(c.id);
                 if (!ok) return;
                 state.contacts = state.contacts.filter((x) => x.id !== c.id);
+
+                // بدون هذا التسجيل تعيد مزامنة المحادثات إنشاءها عند كل تحميل
+                dismissChatPhone(c.phone);
+
                 save();
                 toast('تم حذف جهة الاتصال');
                 renderContacts();
@@ -2705,6 +2740,10 @@
                 const idx = state.contacts.findIndex((x) => x.id === c.id);
                 if (idx !== -1) state.contacts[idx] = saved;
             }
+
+            // إعادة إدخال رقم محذوف سابقاً تُلغي استبعاده من مزامنة المحادثات
+            undismissChatPhone(saved.phone);
+
             save();
             closeModal();
             toast(isNew ? 'تمت إضافة جهة الاتصال' : 'تم حفظ التعديل');
