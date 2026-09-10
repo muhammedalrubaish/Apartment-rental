@@ -1009,8 +1009,24 @@
 
             let pill = '';
             if (b) {
-                const pcls = b.status === 'blocked' ? 'block' : (b.source === 'direct' ? '' : 'ext');
-                pill = `<span class="cal-pill ${pcls}">${escapeHtml(b.guest)}</span>`;
+                const pcls = [b.status === 'blocked' ? 'block' : (b.source === 'direct' ? '' : 'ext')];
+
+                /* شريط الحجز يُوصَل عبر الأيام المتتالية: يمتد نحو اليوم السابق
+                   واللاحق ما داما ضمن الحجز نفسه وضمن صف الأسبوع ذاته.
+                   col = عمود اليوم في الصف (0 = أول يوم في الأسبوع). */
+                const col = (lead + d - 1) % 7;
+                const prev = bookingOn(addDays(dayIso, -1));
+                const next = bookingOn(addDays(dayIso, 1));
+                const contPrev = !!prev && prev.id === b.id;
+                const contNext = !!next && next.id === b.id;
+
+                // لا يمتد الشريط خارج شبكة الشهر ولو كان الحجز عابراً لحدّ الشهر
+                if (contPrev && col > 0 && d > 1) pcls.push('cont-start');
+                if (contNext && col < 6 && d < daysInMonth) pcls.push('cont-end');
+
+                // الاسم يُكتب مرة واحدة: عند بداية الحجز أو بداية صف أسبوع أو بداية الشهر
+                const label = (!contPrev || col === 0 || d === 1) ? escapeHtml(b.guest) : '';
+                pill = `<span class="cal-pill ${pcls.join(' ')}" title="${escapeHtml(b.guest)}">${label}</span>`;
             }
 
             const hj = state.settings.hijri ? `<span style="font-size:9px;color:var(--muted)">${hijri(dayIso)}</span>` : '';
