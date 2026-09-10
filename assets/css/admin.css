@@ -514,7 +514,8 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 .cal-split { grid-template-columns: minmax(0, 1fr); }
 
 @media (min-width: 1024px) {
-    .cal-split { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+    /* عمودان متساويان: التقويم يميناً وحجوزات الشهر يساراً (اتجاه RTL) */
+    .cal-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 
     /* بطاقة حجوزات الشهر تمتد لارتفاع التقويم تماماً (stretch الافتراضي)
        فتتطابق حوافها معه مهما قلّ عدد الحجوزات */
