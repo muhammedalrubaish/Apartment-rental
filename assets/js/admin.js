@@ -2231,12 +2231,28 @@
         return state.contacts.find((c) => contactPhones(c).indexOf(n) !== -1) || null;
     }
 
-    /* حجوزات جهة الاتصال — تشمل حجوزات الأرقام المدموجة فيها،
-       فيظهر ضيف حجز مرة من المنصة ومرة عبر واتساب كسجل واحد */
+    /* توحيد الاسم للمقارنة: تشذيب المسافات وتوحيد المسافات المتكررة */
+    function normName(name) {
+        return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+
+    /* حجوزات جهة الاتصال. تُطابَق بطريقتين:
+       ١) الرقم — الأساسي أو أي رقم مدموج فيه.
+       ٢) اسم الضيف — لحجز أُدخل يدوياً بلا رقم، أو برقم غير مسجّل لأحد.
+       الحجز المسجّل برقم جهة اتصال أخرى لا يُنسب بالاسم حتى لا يُسحب منها. */
     function bookingsOfContact(c) {
         const set = contactPhones(c);
-        if (!set.length) return [];
-        return realBookings().filter((b) => b.phone && set.indexOf(normPhone(b.phone)) !== -1);
+        const name = normName(c.name);
+
+        return realBookings().filter((b) => {
+            const bp = normPhone(b.phone);
+            if (bp && set.indexOf(bp) !== -1) return true;
+            if (!name || normName(b.guest) !== name) return false;
+            if (!bp) return true;
+
+            const owner = findContactByPhone(b.phone);
+            return !owner || owner.id === c.id;
+        });
     }
 
     /* رقم واتساب دولي من رقم محلي */
