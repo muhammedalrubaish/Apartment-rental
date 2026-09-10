@@ -246,10 +246,25 @@
         return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
     }
 
+    /* لغة تنسيق الأرقام — خيار «أرقام إنجليزية» يحوّل ١٢٣ إلى 123 */
+    function numLocale() {
+        if (state.settings.lang !== 'ar' || state.settings.latinDigits) return 'en-US';
+        return 'ar-EG';
+    }
+
+    /* لغة تنسيق التواريخ — أسماء الشهور تبقى عربية مع أرقام لاتينية */
+    function dateLocale(calendar) {
+        const cal = calendar || 'gregory';
+        if (state.settings.lang !== 'ar') return 'en-GB';
+        return state.settings.latinDigits
+            ? `ar-SA-u-ca-${cal}-nu-latn`
+            : `ar-SA-u-ca-${cal}`;
+    }
+
     /* عرض المبلغ بالهللات عند وجودها، وبلا كسور صفرية حين يكون صحيحاً */
     function money(n) {
         const cur = CURRENCIES[state.settings.currency] || 'ر.س';
-        const v = round2(n).toLocaleString(state.settings.lang === 'ar' ? 'ar-EG' : 'en-US', {
+        const v = round2(n).toLocaleString(numLocale(), {
             minimumFractionDigits: 0,
             maximumFractionDigits: 2,
         });
@@ -259,13 +274,13 @@
     function fmtDate(dstr) {
         if (!dstr) return '—';
         const d = new Date(dstr + 'T00:00:00');
-        const locale = state.settings.lang === 'ar' ? 'ar-SA-u-ca-gregory' : 'en-GB';
+        const locale = dateLocale();
         return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
     function hijri(dstr) {
         try {
-            return new Date(dstr + 'T00:00:00').toLocaleDateString('ar-SA-u-ca-islamic', {
+            return new Date(dstr + 'T00:00:00').toLocaleDateString(dateLocale('islamic'), {
                 day: 'numeric', month: 'long',
             });
         } catch (e) { return ''; }
@@ -333,6 +348,7 @@
         return {
             settings: {
                 lang: 'ar', theme: 'light', currency: 'SAR', hijri: false,
+                latinDigits: false,   // أرقام عربية-هندية (١٢٣) افتراضاً
                 notifBooking: true, notifBills: true, notifMessages: true, notifCheckout: false,
             },
             rates: Object.assign({}, DEFAULT_RATES),
@@ -369,6 +385,7 @@
                     // ترقية النسخ القديمة: أضيفت تقديرات المصاريف المتغيّرة لاحقاً
                     parsed.rates = Object.assign({}, DEFAULT_RATES, parsed.rates || {});
                     parsed.dismissedChatPhones = parsed.dismissedChatPhones || [];
+                    if (parsed.settings.latinDigits === undefined) parsed.settings.latinDigits = false;
                     // ترقية: عمولة كل منصة على حدة أُضيفت لاحقاً
                     parsed.fees = parsed.fees || {};
                     FEE_PLATFORMS.forEach((k) => {
@@ -676,7 +693,7 @@
             const y = cursor.getFullYear();
             const m = cursor.getMonth();
             months.push({
-                label: cursor.toLocaleDateString('ar-SA-u-ca-gregory', { month: 'short', year: '2-digit' }),
+                label: cursor.toLocaleDateString(dateLocale(), { month: 'short', year: '2-digit' }),
                 rev: monthRevenue(y, m),          // بعد خصم العمولة
                 fee: monthCommission(y, m),
                 exp: monthExpenses(y, m),
@@ -714,7 +731,7 @@
         for (let i = chartMonths - 1; i >= 0; i--) {
             const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
             data.push({
-                label: d.toLocaleDateString('ar-SA-u-ca-gregory', { month: 'short' }),
+                label: d.toLocaleDateString(dateLocale(), { month: 'short' }),
                 rev: monthRevenue(d.getFullYear(), d.getMonth()),
                 exp: monthExpenses(d.getFullYear(), d.getMonth()),
             });
@@ -1016,7 +1033,7 @@
         const lead = first.getDay();
         const today = todayISO();
 
-        $('#cal-month').textContent = first.toLocaleDateString('ar-SA-u-ca-gregory', { month: 'long', year: 'numeric' });
+        $('#cal-month').textContent = first.toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' });
 
         let html = '';
         for (let i = 0; i < lead; i++) html += '<div class="cal-day empty"></div>';
@@ -2373,6 +2390,7 @@
         $$('#set-lang button').forEach((b) => b.classList.toggle('active', b.dataset.lang === state.settings.lang));
         $('#set-theme').classList.toggle('on', state.settings.theme === 'dark');
         $('#set-hijri').classList.toggle('on', !!state.settings.hijri);
+        $('#set-digits').classList.toggle('on', !!state.settings.latinDigits);
         $('#set-currency').value = state.settings.currency;
         $$('[data-pref]').forEach((t) => t.classList.toggle('on', !!state.settings[t.dataset.pref]));
 
@@ -3116,6 +3134,14 @@
             state.settings.hijri = !state.settings.hijri;
             save();
             renderSettings();
+        });
+
+        $('#set-digits').addEventListener('click', () => {
+            state.settings.latinDigits = !state.settings.latinDigits;
+            save();
+            renderSettings();
+            renderView(currentView());   // كل المبالغ والتواريخ تُعاد صياغتها
+            toast(state.settings.latinDigits ? 'الأرقام إنجليزية (1234)' : 'الأرقام عربية (١٢٣٤)');
         });
 
         $('#set-currency').addEventListener('change', (e) => {
