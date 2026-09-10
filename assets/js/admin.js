@@ -179,10 +179,7 @@
        ملاحظة: النظافة والكهرباء والإنترنت لم تبقَ ثوابت — أصبحت تقديرات قابلة للتعديل
        في state.rates (انظر DEFAULT_RATES أدناه)، والقيمة الفعلية تُقرأ من جدول المصاريف. */
     const RATES = {
-        nightly: 294,        // سعر الليلة
-        feeBase: 14.38,      // ثابت عمولة المنصات — القيمة التاريخية المرجعية
-        feeRate: 0.0692,     // نسبة عمولة المنصات — القيمة التاريخية المرجعية
-        feeCap: 50,          // الحد الأقصى للعمولة عن الليلة
+        nightly: 294,        // سعر الليلة المرجعي
     };
 
     /* عمولة كل منصة على حدة — قابلة للتعديل من الإعدادات.
@@ -233,7 +230,8 @@
         return Math.round(platformFee(total / nights, source) * nights);
     }
 
-    /* عمولة حجز قائم — الأساس في إعادة الحساب وفي عرض التفاصيل */
+    /* العمولة المتوقعة لحجز بإعدادات منصته — اقتراح فقط.
+       العمولة الفعلية المحفوظة هي b.commission (انظر bookingCommissionAmount). */
     function bookingCommission(b) {
         if (!b || b.status === 'cancelled' || b.status === 'blocked') return 0;
         if (FEE_PLATFORMS.indexOf(b.source) === -1) return 0;
@@ -390,10 +388,34 @@
         return d.getFullYear() === y && d.getMonth() === m;
     }
 
+    /* عمولة الحجز المسجَّلة — المنصة تحجزها من الإجمالي فلا تُعدّ فاتورة */
+    function bookingCommissionAmount(b) {
+        return Number(b.commission) || 0;
+    }
+
+    /* الإيراد الصافي للحجز = الإجمالي − عمولة المنصة */
+    function bookingNet(b) {
+        return (Number(b.total) || 0) - bookingCommissionAmount(b);
+    }
+
+    /* إيراد الشهر بعد خصم عمولات المنصات — هو ما يصل حساب المالك فعلاً */
     function monthRevenue(y, m) {
         return realBookings()
             .filter((b) => inMonth(b.checkin, y, m))
+            .reduce((s, b) => s + bookingNet(b), 0);
+    }
+
+    /* الإجمالي قبل العمولة — للعرض والمقارنة */
+    function monthGross(y, m) {
+        return realBookings()
+            .filter((b) => inMonth(b.checkin, y, m))
             .reduce((s, b) => s + (Number(b.total) || 0), 0);
+    }
+
+    function monthCommission(y, m) {
+        return realBookings()
+            .filter((b) => inMonth(b.checkin, y, m))
+            .reduce((s, b) => s + bookingCommissionAmount(b), 0);
     }
 
     function monthExpenses(y, m) {
@@ -433,24 +455,25 @@
         return { from: `${y}-01-01`, to: `${y}-12-31`, label: `سنة ${y}` };
     }
 
-    /* حصيلة النطاق: الإيرادات بتاريخ الوصول، والمصاريف بتاريخ المصروف */
+    /* حصيلة النطاق: الإيرادات بتاريخ الوصول، والمصاريف بتاريخ المصروف.
+       gross = ما دفعه الضيوف • fees = ما حجزته المنصات • revenue = ما وصلني */
     function rangeStats(from, to) {
         const bookings = realBookings().filter((b) => b.checkin >= from && b.checkin <= to);
-        const revenue = bookings.reduce((s, b) => s + (Number(b.total) || 0), 0);
+        const gross = bookings.reduce((s, b) => s + (Number(b.total) || 0), 0);
+        const fees = bookings.reduce((s, b) => s + bookingCommissionAmount(b), 0);
+        const revenue = gross - fees;
         const nights = bookings.reduce((s, b) => s + nightsBetween(b.checkin, b.checkout), 0);
 
         const expenses = state.expenses.filter((e) => e.date >= from && e.date <= to);
         const expTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-        const fees = expenses
-            .filter((e) => e.category === 'عمولة منصات')
-            .reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
         return {
-            revenue, nights, expenses: expTotal, fees,
+            gross, fees, revenue, nights,
+            expenses: expTotal,
             net: revenue - expTotal,
             count: bookings.length,
-            adr: nights ? Math.round(revenue / nights) : 0,
-            margin: revenue ? Math.round(((revenue - expTotal) / revenue) * 100) : 0,
+            adr: nights ? Math.round(gross / nights) : 0,
+            margin: gross ? Math.round(((revenue - expTotal) / gross) * 100) : 0,
             bookings,
         };
     }
@@ -480,6 +503,8 @@
         const y = now.getFullYear();
         const m = now.getMonth();
         const rev = monthRevenue(y, m);
+        const gross = monthGross(y, m);
+        const commission = monthCommission(y, m);
         const exp = monthExpenses(y, m);
         const prevM = m === 0 ? 11 : m - 1;
         const prevY = m === 0 ? y - 1 : y;
@@ -490,13 +515,15 @@
             .reduce((s, b) => s + nightsBetween(b.checkin, b.checkout), 0);
 
         return {
-            revenue: rev,
+            revenue: rev,          // بعد خصم عمولة المنصات
+            gross,
+            commission,
             expenses: exp,
             net: rev - exp,
             growth: prevRev ? Math.round(((rev - prevRev) / prevRev) * 100) : 0,
             occupancy: occupancyRate(30),
             nights,
-            adr: nights ? Math.round(rev / nights) : 0,
+            adr: nights ? Math.round(gross / nights) : 0,
             dueBills: state.expenses.filter((e) => e.status === 'due').reduce((s, e) => s + Number(e.amount || 0), 0),
             dueCount: state.expenses.filter((e) => e.status === 'due').length,
             upcoming: realBookings().filter((b) => b.checkin >= todayISO()).length,
@@ -547,7 +574,9 @@
 
         const kpis = [
             { label: 'إيرادات الشهر', value: money(s.revenue), icon: '💰', color: 'var(--ok)', soft: 'var(--ok-soft)',
-              foot: `<span class="kpi-trend ${s.growth >= 0 ? 'up' : 'down'}">${s.growth >= 0 ? '▲' : '▼'} ${Math.abs(s.growth)}%</span> مقارنة بالشهر الماضي` },
+              foot: s.commission
+                  ? `إجمالي ${money(s.gross)} − عمولة ${money(s.commission)}`
+                  : `<span class="kpi-trend ${s.growth >= 0 ? 'up' : 'down'}">${s.growth >= 0 ? '▲' : '▼'} ${Math.abs(s.growth)}%</span> مقارنة بالشهر الماضي` },
             { label: 'المصاريف التشغيلية', value: money(s.expenses), icon: '🧾', color: 'var(--brand)', soft: 'var(--brand-soft)',
               foot: `${s.dueCount} فاتورة غير مسددة بقيمة ${money(s.dueBills)}` },
             { label: 'صافي الربح', value: money(s.net), icon: '📈', color: 'var(--info)', soft: 'var(--info-soft)',
@@ -589,12 +618,12 @@
         $('#year-range-lbl').textContent = `${label} • ${fmtDate(from)} ← ${fmtDate(to)}`;
 
         const items = [
-            { icon: '💰', label: 'إجمالي الإيرادات', value: money(r.revenue), note: `${r.count} حجز • ${r.nights} ليلة` },
-            { icon: '🧾', label: 'إجمالي المصاريف', value: money(r.expenses), note: `منها ${money(r.fees)} عمولات منصات` },
-            { icon: '📈', label: 'صافي الربح', value: money(r.net), note: `هامش ${r.margin}% من الإيرادات` },
-            { icon: '🛏️', label: 'متوسط سعر الليلة', value: money(r.adr), note: 'على مدى النطاق المختار' },
-            { icon: '📅', label: 'عدد الليالي المؤجَّرة', value: r.nights, note: `متوسط ${r.count ? Math.round(r.nights / r.count) : 0} ليلة للحجز` },
-            { icon: '🔑', label: 'عدد الحجوزات', value: r.count, note: 'الحجوزات الفعلية دون الملغي والمحجوب' },
+            { icon: '💵', label: 'إجمالي مبالغ الحجوزات', value: money(r.gross), note: `${r.count} حجز • ${r.nights} ليلة` },
+            { icon: '🧾', label: 'عمولات المنصات', value: money(r.fees), note: r.gross ? `${Math.round((r.fees / r.gross) * 100)}% من الإجمالي — تحجزها المنصة` : 'تحجزها المنصة من الإجمالي' },
+            { icon: '💰', label: 'الإيراد الواصل لي', value: money(r.revenue), note: 'الإجمالي بعد خصم العمولات' },
+            { icon: '🧹', label: 'المصاريف التشغيلية', value: money(r.expenses), note: 'نظافة وكهرباء وإنترنت' },
+            { icon: '📈', label: 'صافي الربح', value: money(r.net), note: `هامش ${r.margin}% من إجمالي الحجوزات` },
+            { icon: '🛏️', label: 'متوسط سعر الليلة', value: money(r.adr), note: 'قبل خصم العمولة' },
         ];
 
         zone.innerHTML = items.map((i) => `
@@ -626,13 +655,14 @@
             const m = cursor.getMonth();
             months.push({
                 label: cursor.toLocaleDateString('ar-SA-u-ca-gregory', { month: 'short', year: '2-digit' }),
-                rev: monthRevenue(y, m),
+                rev: monthRevenue(y, m),          // بعد خصم العمولة
+                fee: monthCommission(y, m),
                 exp: monthExpenses(y, m),
             });
             cursor.setMonth(cursor.getMonth() + 1);
         }
 
-        const active = months.filter((x) => x.rev > 0 || x.exp > 0);
+        const active = months.filter((x) => x.rev > 0 || x.exp > 0 || x.fee > 0);
         if (!active.length) {
             box.innerHTML = emptyBox('📊', 'لا حركة في هذا النطاق', 'اختر نطاقاً آخر أو أضف حجوزات');
             return;
@@ -645,7 +675,7 @@
             <div class="bar-row">
                 <div class="bar-top">
                     <span>${x.label}</span>
-                    <span class="amt">${money(x.rev)} <span style="color:var(--muted);font-weight:500">− ${money(x.exp)} = ${money(x.rev - x.exp)}</span></span>
+                    <span class="amt">${money(x.rev)} <span style="color:var(--muted);font-weight:500">${x.fee ? `(بعد عمولة ${money(x.fee)}) ` : ''}− ${money(x.exp)} = ${money(x.rev - x.exp)}</span></span>
                 </div>
                 <div class="bar-track">
                     <div class="bar-fill" style="width:${max ? (x.rev / max) * 100 : 0}%;background:var(--ok)"></div>
@@ -803,7 +833,7 @@
                 <td class="num dim">${fmtDate(b.checkin)}</td>
                 <td class="num">${nightsBetween(b.checkin, b.checkout)}</td>
                 <td class="dim">${SOURCE_LABEL[b.source] || b.source}</td>
-                <td class="num">${money(b.total)}</td>
+                <td class="num">${money(b.total)}${bookingCommissionAmount(b) ? `<br><span style="font-size:10.5px;color:var(--muted);font-weight:600">الواصل ${money(bookingNet(b))}</span>` : ''}</td>
                 <td><span class="tag ${tag[0]}">${tag[1]}</span></td>
                 <td><button class="btn btn-ghost btn-sm" data-edit-booking="${b.id}">تعديل</button></td>
             </tr>`;
@@ -923,7 +953,7 @@
                     ? `فعلي هذا الشهر • حصتي من ${shares} مشاركين`
                     : `حصتي = ${Math.round(Number(r.internetTotal) || 0)} ÷ ${shares} مشاركين`,
             },
-            { icon: '🧾', label: 'عمولة المنصات', value: money(state.expenses.filter((e) => e.category === 'عمولة منصات').reduce((a, e) => a + Number(e.amount || 0), 0)), note: `${RATES.feeBase} + ${(RATES.feeRate * 100).toFixed(2)}% لكل ليلة (بحد ${RATES.feeCap})` },
+            { icon: '🧾', label: 'عمولة المنصات', value: money(monthCommission(y, m)), note: 'محجوزة من إجمالي حجوزات هذا الشهر' },
             { icon: '🔑', label: 'الوحدات النشطة', value: state.properties.filter((p) => p.status === 'active').length, note: 'من أصل ' + state.properties.length },
             // الزبائن فقط — جهات الاتصال التشغيلية (نظافة، مكتب العمارة، مضيفون) لا تُحسب زبائن
             { icon: '👥', label: 'إجمالي الزبائن', value: state.contacts.filter((c) => !isOpsContact(c)).length, note: 'من الموقع والمنصات' },
@@ -1233,6 +1263,8 @@
             id: r.id, propertyId: r.property_id, guest: r.guest, phone: r.phone || '',
             source: r.source, checkin: r.checkin, checkout: r.checkout,
             total: Number(r.total) || 0, status: r.status, note: r.note || '',
+            // العمولة التي حجزتها المنصة من الإجمالي — 0 للحجوزات المباشرة
+            commission: Number(r.commission) || 0,
         };
     }
 
@@ -1241,7 +1273,26 @@
             property_id: b.propertyId, guest: b.guest, phone: b.phone || '',
             source: b.source, checkin: b.checkin, checkout: b.checkout,
             total: b.total || 0, status: b.status, note: b.note || '',
+            commission: Number(b.commission) || 0,
         };
+    }
+
+    /* عمود commission أُضيف بهجرة 0004. إن لم تُطبَّق الهجرة بعد ترفض Supabase
+       الصف بالخطأ 42703 / PGRST204، فنعيد المحاولة دون العمود ونبلّغ المالك
+       بدل أن يفشل حفظ الحجز كلياً. */
+    function isMissingCommissionColumn(error) {
+        if (!error) return false;
+        const code = error.code || '';
+        const msg = `${error.message || ''}${error.details || ''}`;
+        return (code === '42703' || code === 'PGRST204') && msg.indexOf('commission') !== -1;
+    }
+
+    let commissionColumnWarned = false;
+
+    function warnCommissionColumn() {
+        if (commissionColumnWarned) return;
+        commissionColumnWarned = true;
+        toast('حُفظ الحجز دون العمولة — نفّذ ملف الهجرة 0004 في Supabase', true);
     }
 
     async function loadBookings() {
@@ -1265,11 +1316,18 @@
         const client = sbc();
         if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
-        const { data, error } = await client
+        let { data, error } = await client
             .from('bookings')
             .insert(bookingToRow(booking))
             .select()
             .single();
+
+        if (isMissingCommissionColumn(error)) {
+            const row = bookingToRow(booking);
+            delete row.commission;
+            ({ data, error } = await client.from('bookings').insert(row).select().single());
+            if (!error) warnCommissionColumn();
+        }
 
         if (error) { reportDbError('bookings', 'تعذّر حفظ الحجز', error); return null; }
         return bookingFromRow(data);
@@ -1279,12 +1337,19 @@
         const client = sbc();
         if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
-        const { data, error } = await client
+        let { data, error } = await client
             .from('bookings')
             .update(bookingToRow(patch))
             .eq('id', id)
             .select()
             .single();
+
+        if (isMissingCommissionColumn(error)) {
+            const row = bookingToRow(patch);
+            delete row.commission;
+            ({ data, error } = await client.from('bookings').update(row).eq('id', id).select().single());
+            if (!error) warnCommissionColumn();
+        }
 
         if (error) { reportDbError('bookings', 'تعذّر حفظ تعديل الحجز', error); return null; }
         return bookingFromRow(data);
@@ -1805,96 +1870,109 @@
         return found || null;
     }
 
-    /* مزامنة عمولة حجز واحد بعد تعديله — تُنشئ أو تُعدّل أو تحذف مصروف العمولة.
-       before = صورة الحجز قبل التعديل، للعثور على المصروف القديم إن تغيّر الاسم أو المنصة. */
-    async function syncBookingCommission(b, before) {
+    /* تنظيف صف مصروف عمولة قديم لحجز صار يحفظ عمولته داخله.
+       يمنع احتساب العمولة مرتين: مرة في الحجز ومرة كفاتورة. */
+    async function dropLegacyFeeExpense(b, before) {
         const used = new Set();
         const exp = findFeeExpense(b, used) || (before ? findFeeExpense(before, used) : null);
-        const expected = bookingCommission(b);
-
-        if (exp) {
-            if (expected <= 0) {
-                // صار الحجز مباشراً أو ملغياً — لا عمولة عليه
-                const ok = await deleteExpense(exp.id);
-                if (ok) state.expenses = state.expenses.filter((x) => x.id !== exp.id);
-                return;
-            }
-            if (Math.round(Number(exp.amount) || 0) === expected && exp.note === feeNote(b)) return;
-
-            const saved = await updateExpense(exp.id, Object.assign({}, exp, {
-                amount: expected, date: b.checkin, dueDate: b.checkin, note: feeNote(b),
-            }));
-            if (saved) Object.assign(exp, saved);
-            return;
-        }
-
-        if (expected > 0) {
-            const saved = await createExpense({
-                propertyId: b.propertyId, category: 'عمولة منصات',
-                amount: expected, date: b.checkin, dueDate: b.checkin, status: 'due',
-                note: feeNote(b),
-            });
-            if (saved) state.expenses.push(saved);
+        if (!exp) return;
+        if (await deleteExpense(exp.id)) {
+            state.expenses = state.expenses.filter((x) => x.id !== exp.id);
         }
     }
 
-    /* إعادة حساب عمولات كل الحجوزات القائمة بأسعار المنصات الحالية.
-       تنعكس مباشرة على المصاريف وصافي الربح والرسوم البيانية. */
+    /* ترحيل العمولات القديمة: كل صف «عمولة منصات» في المصاريف يُنقل إلى
+       حقل commission في حجزه ثم يُحذف الصف. الرصيد النهائي لا يتغيّر —
+       تتغيّر فقط طريقة التمثيل: خصم داخل الحجز بدل فاتورة مستحقة. */
+    async function migrateFeeExpenses(btn) {
+        const feeRows = state.expenses.filter((e) => e.category === 'عمولة منصات');
+        if (!feeRows.length) {
+            toast('لا توجد عمولات في الفواتير — كل العمولات محفوظة داخل حجوزاتها');
+            return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = 'جارٍ الترحيل…'; }
+
+        let moved = 0;
+        let orphan = 0;
+        let failed = 0;
+        let total = 0;
+
+        for (const e of feeRows) {
+            // الملاحظة تحمل «الضيف — المنصة — تاريخ الوصول» أو الصيغة القديمة بلا تاريخ
+            const b = realBookings().find((x) => (
+                e.note === feeNote(x) || e.note === `${x.guest} — ${SOURCE_LABEL[x.source] || x.source}`
+            ));
+
+            if (!b) { orphan++; continue; }
+
+            const amount = Number(e.amount) || 0;
+            const saved = await updateBooking(b.id, Object.assign({}, b, {
+                commission: (Number(b.commission) || 0) + amount,
+            }));
+            if (!saved) { failed++; continue; }
+
+            const idx = state.bookings.findIndex((x) => x.id === b.id);
+            if (idx !== -1) state.bookings[idx] = saved;
+
+            if (await deleteExpense(e.id)) {
+                state.expenses = state.expenses.filter((x) => x.id !== e.id);
+            }
+            total += amount;
+            moved++;
+        }
+
+        if (btn) { btn.disabled = false; btn.textContent = 'ترحيل العمولات من الفواتير'; }
+
+        save();
+        renderView(currentView());
+
+        if (moved) toast(`تم ترحيل ${moved} عمولة بقيمة ${money(total)} إلى حجوزاتها`);
+        if (orphan) toast(`${orphan} عمولة لم يُعرف حجزها — عدّلها يدوياً من الفواتير`, true);
+        if (failed) toast(`تعذّر ترحيل ${failed} عمولة — تحقق من تنفيذ هجرة 0004`, true);
+    }
+
+    /* إعادة حساب عمولات الحجوزات بأسعار المنصات الحالية — تكتب في حقل
+       commission داخل كل حجز، فتنعكس فوراً على الإيراد الواصل وصافي الربح.
+       تُستخدم عند تغيير نسبة منصة، أو لتقدير عمولات حجوزات قديمة بلا عمولة. */
     async function recalcCommissions(btn) {
-        const bookings = realBookings().filter((b) => FEE_PLATFORMS.indexOf(b.source) !== -1);
+        const bookings = realBookings().filter((b) => (
+            FEE_PLATFORMS.indexOf(b.source) !== -1 && (Number(b.total) || 0) > 0
+        ));
         if (!bookings.length) {
             toast('لا توجد حجوزات من منصات لإعادة حسابها');
             return;
         }
 
+        const changes = bookings
+            .map((b) => ({ b, expected: bookingCommission(b), current: bookingCommissionAmount(b) }))
+            .filter((x) => Math.round(x.expected) !== Math.round(x.current));
+
+        if (!changes.length) {
+            toast('العمولات مطابقة للإعدادات الحالية — لا تغيير');
+            return;
+        }
+
+        const diff = changes.reduce((sum, x) => sum + (x.expected - x.current), 0);
+        const sign = diff > 0 ? '+' : '';
+        const ok = confirm(
+            `إعادة حساب عمولات ${changes.length} حجز بإعدادات المنصات الحالية؟
+`
+            + `فرق العمولات ${sign}${Math.round(diff)} ر.س — سيتغيّر الإيراد الواصل بالمقابل.`
+        );
+        if (!ok) return;
+
         if (btn) { btn.disabled = true; btn.textContent = 'جارٍ إعادة الحساب…'; }
 
-        const used = new Set();
         let updated = 0;
-        let created = 0;
-        let removed = 0;
         let failed = 0;
-        let diff = 0;
 
-        for (const b of bookings) {
-            const expected = bookingCommission(b);
-            const exp = findFeeExpense(b, used);
-
-            if (exp) {
-                used.add(exp.id);
-                const before = Number(exp.amount) || 0;
-
-                if (expected <= 0) {
-                    // المنصة صارت بلا عمولة (مثل الموقع المباشر) — يُحذف الصف
-                    const ok = await deleteExpense(exp.id);
-                    if (!ok) { failed++; continue; }
-                    state.expenses = state.expenses.filter((x) => x.id !== exp.id);
-                    diff -= before;
-                    removed++;
-                    continue;
-                }
-
-                if (Math.round(before) === expected) continue;   // لا تغيير
-
-                const patch = Object.assign({}, exp, { amount: expected, note: feeNote(b) });
-                const saved = await updateExpense(exp.id, patch);
-                if (!saved) { failed++; continue; }
-                Object.assign(exp, saved);
-                diff += expected - before;
-                updated++;
-            } else if (expected > 0) {
-                // حجز قديم لم تُسجَّل له عمولة أصلاً
-                const saved = await createExpense({
-                    propertyId: b.propertyId, category: 'عمولة منصات',
-                    amount: expected, date: b.checkin, dueDate: b.checkin, status: 'due',
-                    note: feeNote(b),
-                });
-                if (!saved) { failed++; continue; }
-                state.expenses.push(saved);
-                used.add(saved.id);
-                diff += expected;
-                created++;
-            }
+        for (const { b, expected } of changes) {
+            const saved = await updateBooking(b.id, Object.assign({}, b, { commission: expected }));
+            if (!saved) { failed++; continue; }
+            const idx = state.bookings.findIndex((x) => x.id === b.id);
+            if (idx !== -1) state.bookings[idx] = saved;
+            updated++;
         }
 
         if (btn) { btn.disabled = false; btn.textContent = 'إعادة حساب عمولات الحجوزات'; }
@@ -1902,17 +1980,8 @@
         save();
         renderView(currentView());
 
-        const parts = [];
-        if (updated) parts.push(`عُدِّلت ${updated}`);
-        if (created) parts.push(`أُضيفت ${created}`);
-        if (removed) parts.push(`حُذفت ${removed}`);
-        if (!parts.length) {
-            toast('العمولات مطابقة للإعدادات الحالية — لا تغيير');
-        } else {
-            const sign = diff > 0 ? '+' : '';
-            toast(`${parts.join(' • ')} — فرق الإجمالي ${sign}${Math.round(diff)} ر.س`);
-        }
-        if (failed) toast(`تعذّر تحديث ${failed} عمولة — راجع الاتصال بقاعدة البيانات`, true);
+        if (updated) toast(`أُعيد حساب عمولة ${updated} حجز — فرق ${sign}${Math.round(diff)} ر.س`);
+        if (failed) toast(`تعذّر تحديث ${failed} حجز — تحقق من تنفيذ هجرة 0004`, true);
     }
 
     /* إدخال جهات الاتصال التشغيلية المعروفة — يتجاهل الموجود مسبقاً فلا يُكرّر شيئاً.
@@ -2264,6 +2333,20 @@
                 </select></div>
                 <div class="field"><label>المبلغ الإجمالي</label><input type="number" class="input" id="f-total" placeholder="0" value="${pre.total || ''}"></div>
             </div>
+            <div class="form-row">
+                <div class="field">
+                    <label>عمولة المنصة (ر.س)</label>
+                    <input type="number" class="input" id="f-fee" min="0" step="0.01" placeholder="0" value="${pre.commission != null && pre.commission !== '' ? pre.commission : ''}">
+                </div>
+                <div class="field">
+                    <label>الإيراد الواصل لي</label>
+                    <input class="input" id="f-netview" disabled value="—" style="font-weight:800">
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin:-4px 0 12px;flex-wrap:wrap">
+                <button type="button" class="btn btn-ghost btn-sm" id="f-fee-auto">حساب العمولة تلقائياً</button>
+                <span style="font-size:11.5px;color:var(--muted);font-weight:600">المنصة تحجز العمولة من الإجمالي — اتركها صفراً للحجز المباشر</span>
+            </div>
             ${isEdit ? `<div class="field"><label>حالة الحجز</label><select class="input" id="f-status">
                 <option value="confirmed"${pre.status === 'confirmed' ? ' selected' : ''}>مؤكد</option>
                 <option value="pending"${pre.status === 'pending' ? ' selected' : ''}>بانتظار التأكيد</option>
@@ -2278,25 +2361,49 @@
 
         if (pre.source) $('#f-source').value = pre.source;
 
+        /* العمولة يكتبها المالك بالريال. الحساب التلقائي اقتراح فقط بإعدادات المنصة،
+           والصافي = الإجمالي − العمولة يُعرض لحظياً قبل الحفظ. */
+        const suggestedFee = () => bookingFee(
+            Number($('#f-total').value) || 0,
+            nightsBetween($('#f-in').value, $('#f-out').value),
+            $('#f-source').value
+        );
+
         const recalc = () => {
             const n = nightsBetween($('#f-in').value, $('#f-out').value);
             const nightly = state.properties.find((p) => p.id === $('#f-prop').value)?.nightly || 0;
             const src = $('#f-source').value;
-            const total = Number($('#f-total').value) || (n > 0 ? n * nightly : 0);
-            const fee = bookingFee(total, n, src);
+            if (n > 0 && !$('#f-total').value) $('#f-total').value = n * nightly;
+
+            const total = Number($('#f-total').value) || 0;
+            const fee = Math.max(0, Number($('#f-fee').value) || 0);
+            $('#f-netview').value = money(total - fee);
 
             if (n <= 0) {
                 $('#f-hint').textContent = 'تاريخ المغادرة يجب أن يكون بعد الوصول';
-            } else {
-                // العمولة المتوقعة تظهر مباشرة فيرى المالك الصافي قبل الحفظ
-                $('#f-hint').textContent = fee > 0
-                    ? `${n} ليالٍ — السعر المقترح ${money(n * nightly)} • عمولة ${SOURCE_LABEL[src] || src} ${money(fee)} • الصافي ${money(total - fee)}`
-                    : `${n} ليالٍ — السعر المقترح ${money(n * nightly)} • بلا عمولة`;
+                return;
             }
-            if (n > 0 && !$('#f-total').value) $('#f-total').value = n * nightly;
+            if (fee > total) {
+                $('#f-hint').innerHTML = '<span style="color:var(--danger)">العمولة أكبر من المبلغ الإجمالي — راجع الرقم</span>';
+                return;
+            }
+
+            const sug = suggestedFee();
+            const pct = total ? ((fee / total) * 100).toFixed(1) : '0';
+            $('#f-hint').textContent = fee > 0
+                ? `${n} ليالٍ — العمولة ${pct}% من الإجمالي • الصافي ${money(total - fee)}`
+                : `${n} ليالٍ — السعر المقترح ${money(n * nightly)}${sug > 0 ? ` • العمولة المتوقعة لـ${SOURCE_LABEL[src] || src} ${money(sug)}` : ' • بلا عمولة'}`;
         };
 
-        ['#f-total', '#f-source'].forEach((sel) => $(sel).addEventListener('input', recalc));
+        ['#f-total', '#f-source', '#f-fee'].forEach((sel) => $(sel).addEventListener('input', recalc));
+
+        $('#f-fee-auto').addEventListener('click', () => {
+            const sug = suggestedFee();
+            if (!sug) return toast('لا عمولة محسوبة لهذه المنصة — راجع الإعدادات', true);
+            $('#f-fee').value = sug;
+            recalc();
+            toast(`عمولة مقترحة ${money(sug)} بإعدادات ${SOURCE_LABEL[$('#f-source').value] || ''}`);
+        });
 
         ['#f-in', '#f-out', '#f-prop'].forEach((sel) => $(sel).addEventListener('change', recalc));
         recalc();
@@ -2321,12 +2428,17 @@
             const saveBtn = $('#f-save');
             saveBtn.disabled = true;
 
+            const total = Number($('#f-total').value) || 0;
+            const fee = Math.max(0, Number($('#f-fee').value) || 0);
+            if (fee > total) return toast('العمولة أكبر من المبلغ الإجمالي', true);
+
             const payload = {
                 propertyId: $('#f-prop').value,
                 guest: guest || 'غير متاح (حجب)',
                 phone, source,
                 checkin: ci, checkout: co,
-                total: Number($('#f-total').value) || 0,
+                total,
+                commission: fee,
                 status: isEdit
                     ? $('#f-status').value
                     : (source === 'block' ? 'blocked' : 'confirmed'),
@@ -2346,7 +2458,7 @@
             if (isEdit) {
                 const idx = state.bookings.findIndex((x) => x.id === existing.id);
                 if (idx !== -1) state.bookings[idx] = booking;
-                await syncBookingCommission(booking, before);
+                await dropLegacyFeeExpense(booking, before);
                 save();
                 closeModal();
                 toast('تم حفظ تعديل الحجز');
@@ -2369,16 +2481,8 @@
                 pushNotification('booking', 'حجز جديد مؤكد', `${guest} — ${nightsBetween(ci, co)} ليالٍ عبر ${SOURCE_LABEL[source] || source}`);
             }
 
-            // عمولة المنصات تُسجَّل تلقائياً بإعدادات المنصة المعنيّة
-            const fee = bookingCommission(booking);
-            if (fee > 0) {
-                const expense = await createExpense({
-                    propertyId: booking.propertyId, category: 'عمولة منصات',
-                    amount: fee, date: booking.checkin, dueDate: booking.checkin, status: 'due',
-                    note: feeNote(booking),
-                });
-                if (expense) state.expenses.push(expense);
-            }
+            // العمولة لم تُعد صفَّ مصروف — المنصة تحجزها من الإجمالي فهي محفوظة
+            // في حقل commission داخل الحجز نفسه (انظر هجرة 0004)
 
             save();
             closeModal();
@@ -2395,10 +2499,11 @@
             <div class="list-item"><div class="li-icon">📅</div><div class="li-body"><h4>${fmtDate(b.checkin)} ← ${fmtDate(b.checkout)}</h4><p>${nightsBetween(b.checkin, b.checkout)} ليالٍ</p></div></div>
             <div class="list-item"><div class="li-icon">🔗</div><div class="li-body"><h4>${SOURCE_LABEL[b.source] || b.source}</h4><p>مصدر الحجز</p></div><div class="li-side"><b>${money(b.total)}</b></div></div>
             ${(() => {
-                const fee = bookingCommission(b);
+                const fee = bookingCommissionAmount(b);
                 if (!fee) return '';
-                const f = feeConf(b.source);
-                return `<div class="list-item"><div class="li-icon">🧾</div><div class="li-body"><h4>عمولة المنصة</h4><p>${f.base} + ${f.rate}% لكل ليلة${Number(f.cap) > 0 ? ` (بحد ${f.cap})` : ''}</p></div><div class="li-side"><b>${money(fee)}</b><br><span style="font-size:11px;color:var(--muted)">الصافي ${money(Number(b.total) - fee)}</span></div></div>`;
+                const total = Number(b.total) || 0;
+                const pct = total ? ((fee / total) * 100).toFixed(1) : '0';
+                return `<div class="list-item"><div class="li-icon">🧾</div><div class="li-body"><h4>عمولة المنصة</h4><p>${pct}% من الإجمالي — حجزتها المنصة</p></div><div class="li-side"><b>−${money(fee)}</b><br><span style="font-size:11px;color:var(--ok);font-weight:700">الواصل ${money(total - fee)}</span></div></div>`;
             })()}
             ${b.note ? `<div class="list-item"><div class="li-icon">📝</div><div class="li-body"><h4>ملاحظات</h4><p>${escapeHtml(b.note)}</p></div></div>` : ''}`,
             `<button class="btn btn-ghost" id="b-del" style="color:var(--danger)">حذف الحجز</button>
@@ -2761,6 +2866,7 @@
 
         $('#btn-seed-ops').addEventListener('click', (e) => seedOpsContacts(e.currentTarget));
         $('#btn-recalc-fees').addEventListener('click', (e) => recalcCommissions(e.currentTarget));
+        $('#btn-migrate-fees').addEventListener('click', (e) => migrateFeeExpenses(e.currentTarget));
 
         // تبديل الحجوزات القادمة/السابقة في اللوحة
         $$('#upcoming-mode button').forEach((b) => {

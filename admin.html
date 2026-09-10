@@ -460,10 +460,18 @@
                     </p>
                     <div id="fee-rows"></div>
                     <p style="font-size:12px;color:var(--text-dim);line-height:1.8;margin:12px 0 10px">
-                        بعد تعديل أي نسبة اضغط الزر أدناه لتحديث عمولات الحجوزات السابقة
-                        فتنعكس على المصاريف وصافي الربح والرسم البياني.
+                        هذه الأرقام تُستخدم في زر «حساب العمولة تلقائياً» داخل نموذج الحجز فقط —
+                        العمولة الفعلية تكتبها بالريال في كل حجز، والمنصة تحجزها من المبلغ الإجمالي
+                        فلا تظهر كفاتورة مستحقة.
                     </p>
-                    <button class="btn btn-ghost btn-sm" id="btn-recalc-fees">إعادة حساب عمولات الحجوزات</button>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-ghost btn-sm" id="btn-recalc-fees">إعادة حساب عمولات الحجوزات</button>
+                        <button class="btn btn-ghost btn-sm" id="btn-migrate-fees">ترحيل العمولات من الفواتير</button>
+                    </div>
+                    <p style="font-size:11.5px;color:var(--muted);line-height:1.8;margin:10px 0 0">
+                        «الترحيل» ينقل صفوف عمولة المنصات القديمة من الفواتير إلى حقل العمولة
+                        داخل حجوزاتها — نفّذه مرة واحدة بعد تطبيق هجرة 0004.
+                    </p>
                 </div>
 
                 <div class="card">
