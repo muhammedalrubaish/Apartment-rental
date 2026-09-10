@@ -6,6 +6,10 @@
 /* ---------- 1. المتغيرات والثيمات ---------- */
 :root {
     --sidebar-w: 96px;
+    /* هوامش الصفحة وحشو البطاقات — مصدر واحد يضبط كثافة الواجهة كلها */
+    --page-pad: 8px;
+    --card-pad: 14px;
+    --grid-gap: 10px;
     --radius: 16px;
     --radius-sm: 10px;
     --radius-xs: 8px;
@@ -101,14 +105,14 @@ a { color: inherit; text-decoration: none; }
     flex-shrink: 0;
     background: var(--rail);
     border-radius: 22px;
-    margin: 12px;
+    margin: var(--page-pad);
     padding: 14px 8px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
     position: sticky;
-    top: 12px;
+    top: var(--page-pad);
     height: calc(100vh - 24px);
     height: calc(100dvh - 24px);
 }
@@ -193,22 +197,22 @@ a { color: inherit; text-decoration: none; }
 .main {
     flex: 1;
     min-width: 0;
-    padding: 12px 12px 12px 0;
+    padding: var(--page-pad) var(--page-pad) var(--page-pad) 0;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--grid-gap);
 }
 
-body.is-ltr .main { padding: 12px 0 12px 12px; }
+body.is-ltr .main { padding: var(--page-pad) 0 var(--page-pad) var(--page-pad); }
 
 .topbar {
     background: linear-gradient(135deg, var(--brand), #d8521c);
     border: 1px solid transparent;
     border-radius: var(--radius);
-    padding: 12px 18px;
+    padding: 10px 16px;
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     flex-wrap: wrap;
     box-shadow: 0 6px 20px rgba(242, 98, 42, 0.3);
 }
@@ -292,7 +296,7 @@ body.is-ltr .main { padding: 12px 0 12px 12px; }
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 18px;
+    padding: var(--card-pad);
     box-shadow: var(--shadow);
 }
 
@@ -308,7 +312,7 @@ body.is-ltr .main { padding: 12px 0 12px 12px; }
 .card-head .sub { font-size: 12px; color: var(--muted); font-weight: 500; }
 
 /* شبكات */
-.grid { display: grid; gap: 14px; }
+.grid { display: grid; gap: var(--grid-gap); }
 .grid-kpi { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
@@ -366,7 +370,11 @@ body.is-ltr .main { padding: 12px 0 12px 12px; }
 .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
 
 /* ---------- 8. الجداول ---------- */
-.table-wrap { overflow-x: auto; margin: 0 -18px -18px; padding: 0 18px 4px; }
+.table-wrap {
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad));
+    padding: 0 var(--card-pad) 4px;
+}
 table { width: 100%; border-collapse: collapse; min-width: 560px; }
 
 th {
@@ -423,8 +431,6 @@ td.dim { color: var(--text-dim); font-weight: 500; }
     --cal-gap: 5px;
     --cal-pad: 6px;
     gap: var(--cal-gap);
-    max-width: 780px;
-    margin-inline: auto;
 }
 
 .cal-dow {
@@ -454,7 +460,9 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 
 /* بلا translate: الإزاحة تُنشئ سياق تكديس فيتقطّع شريط الحجز المتصل عند المرور */
 .cal-day:hover { border-color: var(--brand); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07); }
-.cal-day.empty { border: none; background: none; pointer-events: none; }
+/* padding: 0 ضروري — الصنف العام .empty (حالة اللاشيء) يفرض حشواً 46px
+   فكان يضخّم صف الأسبوع الأول الذي يحوي خلايا التصدير الفارغة */
+.cal-day.empty { border: none; background: none; pointer-events: none; padding: 0; }
 .cal-day.past { opacity: 0.45; }
 .cal-day.today { box-shadow: inset 0 0 0 2px var(--brand); }
 .cal-day .d-num { font-size: 13px; font-weight: 700; }
@@ -738,14 +746,13 @@ select.input { cursor: pointer; }
     .rail-btn svg { width: 17px; height: 17px; }
     .rail-badge { inset-inline-end: 4px; top: 2px; }
 
-    .main { padding: 10px 10px calc(96px + env(safe-area-inset-bottom, 0px)); }
-    body.is-ltr .main { padding: 10px 10px calc(96px + env(safe-area-inset-bottom, 0px)); }
-    .topbar { padding: 12px 14px; }
+    .main { padding: 8px 8px calc(96px + env(safe-area-inset-bottom, 0px)); }
+    body.is-ltr .main { padding: 8px 8px calc(96px + env(safe-area-inset-bottom, 0px)); }
+    .topbar { padding: 10px 12px; }
     .topbar-title h1 { font-size: 16.5px; }
-    .card { padding: 14px; }
-    .table-wrap { margin: 0 -14px -14px; padding: 0 14px 4px; }
+    .card { --card-pad: 12px; }
     .form-row { grid-template-columns: 1fr; }
-    .cal-grid { --cal-gap: 4px; --cal-pad: 4px; max-width: none; }
+    .cal-grid { --cal-gap: 4px; --cal-pad: 4px; }
     .cal-day { height: 54px; }
     .toast-zone { inset-inline: 12px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 1300; }
 }
