@@ -180,10 +180,25 @@
        في state.rates (انظر DEFAULT_RATES أدناه)، والقيمة الفعلية تُقرأ من جدول المصاريف. */
     const RATES = {
         nightly: 294,        // سعر الليلة
-        feeBase: 14.38,      // ثابت عمولة المنصات
-        feeRate: 0.0692,     // نسبة عمولة المنصات
+        feeBase: 14.38,      // ثابت عمولة المنصات — القيمة التاريخية المرجعية
+        feeRate: 0.0692,     // نسبة عمولة المنصات — القيمة التاريخية المرجعية
         feeCap: 50,          // الحد الأقصى للعمولة عن الليلة
     };
+
+    /* عمولة كل منصة على حدة — قابلة للتعديل من الإعدادات.
+       المعادلة لكل ليلة: ثابت + (نسبة% × سعر الليلة)، بحد أقصى إن وُجد (0 = بلا حد).
+       القيم الأولية هي معادلة النظام السابقة نفسها حتى لا تتغيّر أرقام قديمة تلقائياً. */
+    const FEE_PLATFORMS = ['gathern', 'airbnb', 'direct'];
+    const DEFAULT_FEES = {
+        gathern: { base: 14.38, rate: 6.92, cap: 50 },
+        airbnb: { base: 14.38, rate: 6.92, cap: 50 },
+        direct: { base: 0, rate: 0, cap: 0 },
+    };
+
+    function feeConf(source) {
+        const f = (state.fees && state.fees[source]) || DEFAULT_FEES[source];
+        return f || { base: 0, rate: 0, cap: 0 };
+    }
 
     /* تقديرات المصاريف المتغيّرة — تُستخدم فقط حين لا يوجد مصروف مسجَّل للشهر الحالي.
        - الإنترنت: إجمالي الفاتورة ÷ عدد المشاركين (يتغيّر بانسحاب أو انضمام أحدهم).
@@ -203,16 +218,26 @@
         return (Number(r.internetTotal) || 0) / shares;
     }
 
-    /* عمولة المنصة عن الليلة الواحدة (نفس معادلة لوحة التحصيل) */
-    function platformFee(nightPrice) {
+    /* عمولة المنصة عن الليلة الواحدة — حسب إعدادات المنصة المطلوبة */
+    function platformFee(nightPrice, source) {
         if (nightPrice <= 0) return 0;
-        return Math.min(RATES.feeBase + RATES.feeRate * nightPrice, RATES.feeCap);
+        const f = feeConf(source || 'gathern');
+        const raw = (Number(f.base) || 0) + ((Number(f.rate) || 0) / 100) * nightPrice;
+        const cap = Number(f.cap) || 0;
+        return cap > 0 ? Math.min(raw, cap) : raw;   // حد أقصى صفر = بلا حد
     }
 
     /* عمولة حجز كامل */
-    function bookingFee(total, nights) {
+    function bookingFee(total, nights, source) {
         if (!nights || total <= 0) return 0;
-        return Math.round(platformFee(total / nights) * nights);
+        return Math.round(platformFee(total / nights, source) * nights);
+    }
+
+    /* عمولة حجز قائم — الأساس في إعادة الحساب وفي عرض التفاصيل */
+    function bookingCommission(b) {
+        if (!b || b.status === 'cancelled' || b.status === 'blocked') return 0;
+        if (FEE_PLATFORMS.indexOf(b.source) === -1) return 0;
+        return bookingFee(Number(b.total) || 0, nightsBetween(b.checkin, b.checkout), b.source);
     }
 
     /* بنود المصاريف المعتمدة */
@@ -304,6 +329,7 @@
                 notifBooking: true, notifBills: true, notifMessages: true, notifCheckout: false,
             },
             rates: Object.assign({}, DEFAULT_RATES),
+            fees: JSON.parse(JSON.stringify(DEFAULT_FEES)),
             syncFeeds: [
                 { id: uid(), name: 'جاذر إن (Gathern)', url: '', lastSync: '' },
                 { id: uid(), name: 'Airbnb', url: '', lastSync: '' },
@@ -320,6 +346,8 @@
     let notifFilter = 'all';
     let contactFilter = 'all';   // all | guests | ops
     let chartMonths = 6;
+    let yearRange = { preset: 'this-year', from: '', to: '' };   // this-year | last-year | 12m | custom
+    let upcomingMode = 'next';   // next | past
     let billsExpanded = false;
 
     function load() {
@@ -330,6 +358,11 @@
                 if (parsed && parsed.settings) {
                     // ترقية النسخ القديمة: أضيفت تقديرات المصاريف المتغيّرة لاحقاً
                     parsed.rates = Object.assign({}, DEFAULT_RATES, parsed.rates || {});
+                    // ترقية: عمولة كل منصة على حدة أُضيفت لاحقاً
+                    parsed.fees = parsed.fees || {};
+                    FEE_PLATFORMS.forEach((k) => {
+                        parsed.fees[k] = Object.assign({}, DEFAULT_FEES[k], parsed.fees[k] || {});
+                    });
                     return parsed;
                 }
             }
@@ -367,6 +400,59 @@
         return state.expenses
             .filter((e) => inMonth(e.date, y, m))
             .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    }
+
+    /* ---------------------------------------------------------------------
+       حصيلة نطاق تاريخي — أساس بطاقة «إيرادات السنة»
+       --------------------------------------------------------------------- */
+
+    /* تاريخ ISO من الوقت المحلي — iso() يعتمد UTC فيُنقص يوماً عند منتصف الليل المحلي */
+    function localISO(d) {
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${d.getFullYear()}-${mm}-${dd}`;
+    }
+
+    /* حدود النطاق المختار (تواريخ ISO شاملة الطرفين) */
+    function yearRangeBounds() {
+        const now = new Date();
+        const y = now.getFullYear();
+
+        if (yearRange.preset === 'last-year') {
+            return { from: `${y - 1}-01-01`, to: `${y - 1}-12-31`, label: `سنة ${y - 1}` };
+        }
+        if (yearRange.preset === '12m') {
+            const start = new Date(y, now.getMonth() - 11, 1);
+            return { from: localISO(start), to: localISO(now), label: 'آخر 12 شهراً' };
+        }
+        if (yearRange.preset === 'custom') {
+            const from = yearRange.from || `${y}-01-01`;
+            const to = yearRange.to || localISO(now);
+            return { from, to, label: `${fmtDate(from)} ← ${fmtDate(to)}` };
+        }
+        return { from: `${y}-01-01`, to: `${y}-12-31`, label: `سنة ${y}` };
+    }
+
+    /* حصيلة النطاق: الإيرادات بتاريخ الوصول، والمصاريف بتاريخ المصروف */
+    function rangeStats(from, to) {
+        const bookings = realBookings().filter((b) => b.checkin >= from && b.checkin <= to);
+        const revenue = bookings.reduce((s, b) => s + (Number(b.total) || 0), 0);
+        const nights = bookings.reduce((s, b) => s + nightsBetween(b.checkin, b.checkout), 0);
+
+        const expenses = state.expenses.filter((e) => e.date >= from && e.date <= to);
+        const expTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        const fees = expenses
+            .filter((e) => e.category === 'عمولة منصات')
+            .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+        return {
+            revenue, nights, expenses: expTotal, fees,
+            net: revenue - expTotal,
+            count: bookings.length,
+            adr: nights ? Math.round(revenue / nights) : 0,
+            margin: revenue ? Math.round(((revenue - expTotal) / revenue) * 100) : 0,
+            bookings,
+        };
     }
 
     /* إجمالي بند مصروف واحد في شهر معيّن — الأساس في عرض القيمة الفعلية المتغيّرة */
@@ -480,11 +566,91 @@
                 <div class="kpi-foot">${k.foot}</div>
             </div>`).join('');
 
+        renderYearRevenue();
         drawChart();
         renderExpenseBreakdown();
         renderUpcoming();
         renderBills();
         renderOps(s);
+    }
+
+    /* بطاقة إيرادات السنة — حصيلة النطاق المختار وتفصيل شهري */
+    function renderYearRevenue() {
+        const zone = $('#year-zone');
+        if (!zone) return;
+
+        const { from, to, label } = yearRangeBounds();
+        const r = rangeStats(from, to);
+
+        $$('#year-preset button').forEach((b) => b.classList.toggle('active', b.dataset.yr === yearRange.preset));
+        $('#year-custom').hidden = yearRange.preset !== 'custom';
+        $('#year-from').value = yearRange.from || from;
+        $('#year-to').value = yearRange.to || to;
+        $('#year-range-lbl').textContent = `${label} • ${fmtDate(from)} ← ${fmtDate(to)}`;
+
+        const items = [
+            { icon: '💰', label: 'إجمالي الإيرادات', value: money(r.revenue), note: `${r.count} حجز • ${r.nights} ليلة` },
+            { icon: '🧾', label: 'إجمالي المصاريف', value: money(r.expenses), note: `منها ${money(r.fees)} عمولات منصات` },
+            { icon: '📈', label: 'صافي الربح', value: money(r.net), note: `هامش ${r.margin}% من الإيرادات` },
+            { icon: '🛏️', label: 'متوسط سعر الليلة', value: money(r.adr), note: 'على مدى النطاق المختار' },
+            { icon: '📅', label: 'عدد الليالي المؤجَّرة', value: r.nights, note: `متوسط ${r.count ? Math.round(r.nights / r.count) : 0} ليلة للحجز` },
+            { icon: '🔑', label: 'عدد الحجوزات', value: r.count, note: 'الحجوزات الفعلية دون الملغي والمحجوب' },
+        ];
+
+        zone.innerHTML = items.map((i) => `
+            <div class="list-item">
+                <div class="li-icon">${i.icon}</div>
+                <div class="li-body">
+                    <h4>${i.label}</h4>
+                    <p>${i.note}</p>
+                </div>
+                <div class="li-side"><b style="font-size:15px">${i.value}</b></div>
+            </div>`).join('');
+
+        renderYearMonths(from, to);
+    }
+
+    /* تفصيل شهري داخل النطاق — أشرطة نسبية لأعلى شهر */
+    function renderYearMonths(from, to) {
+        const box = $('#year-months');
+        if (!box) return;
+
+        const start = new Date(from + 'T00:00:00');
+        const end = new Date(to + 'T00:00:00');
+        const months = [];
+        const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+
+        // سقف 24 شهراً يحمي من نطاق مخصص طويل جداً
+        while (cursor <= end && months.length < 24) {
+            const y = cursor.getFullYear();
+            const m = cursor.getMonth();
+            months.push({
+                label: cursor.toLocaleDateString('ar-SA-u-ca-gregory', { month: 'short', year: '2-digit' }),
+                rev: monthRevenue(y, m),
+                exp: monthExpenses(y, m),
+            });
+            cursor.setMonth(cursor.getMonth() + 1);
+        }
+
+        const active = months.filter((x) => x.rev > 0 || x.exp > 0);
+        if (!active.length) {
+            box.innerHTML = emptyBox('📊', 'لا حركة في هذا النطاق', 'اختر نطاقاً آخر أو أضف حجوزات');
+            return;
+        }
+
+        const max = Math.max.apply(null, active.map((x) => x.rev));
+
+        box.innerHTML = `<h4 style="font-size:13px;margin:0 0 10px;color:var(--text-dim)">التفصيل الشهري</h4>`
+            + active.map((x) => `
+            <div class="bar-row">
+                <div class="bar-top">
+                    <span>${x.label}</span>
+                    <span class="amt">${money(x.rev)} <span style="color:var(--muted);font-weight:500">− ${money(x.exp)} = ${money(x.rev - x.exp)}</span></span>
+                </div>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width:${max ? (x.rev / max) * 100 : 0}%;background:var(--ok)"></div>
+                </div>
+            </div>`).join('');
     }
 
     function drawChart() {
@@ -610,13 +776,23 @@
     };
 
     function renderUpcoming() {
+        const past = upcomingMode === 'past';
+        const today = todayISO();
+
+        // «سابقة» تعرض الأحدث أولاً ليصل المالك لآخر حجز منتهٍ بسرعة
         const rows = realBookings()
-            .filter((b) => b.checkout >= todayISO())
-            .sort((a, b) => a.checkin.localeCompare(b.checkin))
-            .slice(0, 6);
+            .filter((b) => (past ? b.checkout < today : b.checkout >= today))
+            .sort((a, b) => (past ? b.checkin.localeCompare(a.checkin) : a.checkin.localeCompare(b.checkin)))
+            .slice(0, past ? 10 : 6);
+
+        $('#upcoming-title').textContent = past ? 'الحجوزات السابقة' : 'الحجوزات القادمة';
+        $$('#upcoming-mode button').forEach((b) => b.classList.toggle('active', b.dataset.um === upcomingMode));
 
         if (!rows.length) {
-            $('#tbl-upcoming').innerHTML = `<tr><td colspan="6">${emptyBox('📅', 'لا حجوزات قادمة', 'ستظهر هنا فور وصول حجز جديد')}</td></tr>`;
+            const empty = past
+                ? emptyBox('🗂️', 'لا حجوزات سابقة', 'ستظهر هنا الحجوزات بعد انتهاء مدتها')
+                : emptyBox('📅', 'لا حجوزات قادمة', 'ستظهر هنا فور وصول حجز جديد');
+            $('#tbl-upcoming').innerHTML = `<tr><td colspan="7">${empty}</td></tr>`;
             return;
         }
 
@@ -629,8 +805,17 @@
                 <td class="dim">${SOURCE_LABEL[b.source] || b.source}</td>
                 <td class="num">${money(b.total)}</td>
                 <td><span class="tag ${tag[0]}">${tag[1]}</span></td>
+                <td><button class="btn btn-ghost btn-sm" data-edit-booking="${b.id}">تعديل</button></td>
             </tr>`;
         }).join('');
+
+        // التعديل من اللوحة مباشرة دون المرور بالتقويم
+        $$('[data-edit-booking]', $('#tbl-upcoming')).forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const b = state.bookings.find((x) => x.id === btn.dataset.editBooking);
+                if (b) openBookingForm(null, b);
+            });
+        });
     }
 
     const BILLS_PREVIEW = 7;
@@ -1087,6 +1272,21 @@
             .single();
 
         if (error) { reportDbError('bookings', 'تعذّر حفظ الحجز', error); return null; }
+        return bookingFromRow(data);
+    }
+
+    async function updateBooking(id, patch) {
+        const client = sbc();
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
+
+        const { data, error } = await client
+            .from('bookings')
+            .update(bookingToRow(patch))
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) { reportDbError('bookings', 'تعذّر حفظ تعديل الحجز', error); return null; }
         return bookingFromRow(data);
     }
 
@@ -1578,6 +1778,143 @@
     /* ---------------------------------------------------------------------
        10. جهات الاتصال
        --------------------------------------------------------------------- */
+    /* ---------------------------------------------------------------------
+       عمولات المنصات — إعادة الحساب على الحجوزات السابقة
+       --------------------------------------------------------------------- */
+
+    /* ملاحظة مصروف العمولة — تحمل اسم الضيف والمنصة وتاريخ الوصول ليصبح الربط
+       بالحجز فريداً دون الحاجة لعمود booking_id في قاعدة البيانات */
+    function feeNote(b) {
+        return `${b.guest} — ${SOURCE_LABEL[b.source] || b.source} — ${b.checkin}`;
+    }
+
+    /* البحث عن مصروف عمولة حجز معيّن. الصفوف القديمة كانت بلا تاريخ في الملاحظة
+       فنقبل أيضاً الصيغة السابقة «الضيف — المنصة»، ونمنع ربط صفٍ واحد بحجزين. */
+    function findFeeExpense(b, used) {
+        const exact = feeNote(b);
+        const legacy = `${b.guest} — ${SOURCE_LABEL[b.source] || b.source}`;
+
+        let found = state.expenses.find((e) => (
+            e.category === 'عمولة منصات' && e.note === exact && !used.has(e.id)
+        ));
+        if (found) return found;
+
+        found = state.expenses.find((e) => (
+            e.category === 'عمولة منصات' && e.note === legacy && !used.has(e.id)
+        ));
+        return found || null;
+    }
+
+    /* مزامنة عمولة حجز واحد بعد تعديله — تُنشئ أو تُعدّل أو تحذف مصروف العمولة.
+       before = صورة الحجز قبل التعديل، للعثور على المصروف القديم إن تغيّر الاسم أو المنصة. */
+    async function syncBookingCommission(b, before) {
+        const used = new Set();
+        const exp = findFeeExpense(b, used) || (before ? findFeeExpense(before, used) : null);
+        const expected = bookingCommission(b);
+
+        if (exp) {
+            if (expected <= 0) {
+                // صار الحجز مباشراً أو ملغياً — لا عمولة عليه
+                const ok = await deleteExpense(exp.id);
+                if (ok) state.expenses = state.expenses.filter((x) => x.id !== exp.id);
+                return;
+            }
+            if (Math.round(Number(exp.amount) || 0) === expected && exp.note === feeNote(b)) return;
+
+            const saved = await updateExpense(exp.id, Object.assign({}, exp, {
+                amount: expected, date: b.checkin, dueDate: b.checkin, note: feeNote(b),
+            }));
+            if (saved) Object.assign(exp, saved);
+            return;
+        }
+
+        if (expected > 0) {
+            const saved = await createExpense({
+                propertyId: b.propertyId, category: 'عمولة منصات',
+                amount: expected, date: b.checkin, dueDate: b.checkin, status: 'due',
+                note: feeNote(b),
+            });
+            if (saved) state.expenses.push(saved);
+        }
+    }
+
+    /* إعادة حساب عمولات كل الحجوزات القائمة بأسعار المنصات الحالية.
+       تنعكس مباشرة على المصاريف وصافي الربح والرسوم البيانية. */
+    async function recalcCommissions(btn) {
+        const bookings = realBookings().filter((b) => FEE_PLATFORMS.indexOf(b.source) !== -1);
+        if (!bookings.length) {
+            toast('لا توجد حجوزات من منصات لإعادة حسابها');
+            return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = 'جارٍ إعادة الحساب…'; }
+
+        const used = new Set();
+        let updated = 0;
+        let created = 0;
+        let removed = 0;
+        let failed = 0;
+        let diff = 0;
+
+        for (const b of bookings) {
+            const expected = bookingCommission(b);
+            const exp = findFeeExpense(b, used);
+
+            if (exp) {
+                used.add(exp.id);
+                const before = Number(exp.amount) || 0;
+
+                if (expected <= 0) {
+                    // المنصة صارت بلا عمولة (مثل الموقع المباشر) — يُحذف الصف
+                    const ok = await deleteExpense(exp.id);
+                    if (!ok) { failed++; continue; }
+                    state.expenses = state.expenses.filter((x) => x.id !== exp.id);
+                    diff -= before;
+                    removed++;
+                    continue;
+                }
+
+                if (Math.round(before) === expected) continue;   // لا تغيير
+
+                const patch = Object.assign({}, exp, { amount: expected, note: feeNote(b) });
+                const saved = await updateExpense(exp.id, patch);
+                if (!saved) { failed++; continue; }
+                Object.assign(exp, saved);
+                diff += expected - before;
+                updated++;
+            } else if (expected > 0) {
+                // حجز قديم لم تُسجَّل له عمولة أصلاً
+                const saved = await createExpense({
+                    propertyId: b.propertyId, category: 'عمولة منصات',
+                    amount: expected, date: b.checkin, dueDate: b.checkin, status: 'due',
+                    note: feeNote(b),
+                });
+                if (!saved) { failed++; continue; }
+                state.expenses.push(saved);
+                used.add(saved.id);
+                diff += expected;
+                created++;
+            }
+        }
+
+        if (btn) { btn.disabled = false; btn.textContent = 'إعادة حساب عمولات الحجوزات'; }
+
+        save();
+        renderView(currentView());
+
+        const parts = [];
+        if (updated) parts.push(`عُدِّلت ${updated}`);
+        if (created) parts.push(`أُضيفت ${created}`);
+        if (removed) parts.push(`حُذفت ${removed}`);
+        if (!parts.length) {
+            toast('العمولات مطابقة للإعدادات الحالية — لا تغيير');
+        } else {
+            const sign = diff > 0 ? '+' : '';
+            toast(`${parts.join(' • ')} — فرق الإجمالي ${sign}${Math.round(diff)} ر.س`);
+        }
+        if (failed) toast(`تعذّر تحديث ${failed} عمولة — راجع الاتصال بقاعدة البيانات`, true);
+    }
+
     /* إدخال جهات الاتصال التشغيلية المعروفة — يتجاهل الموجود مسبقاً فلا يُكرّر شيئاً.
        المطابقة بالجوال إن وُجد، وإلا بالاسم (المضيفون دون أرقام). */
     async function seedOpsContacts(btn) {
@@ -1778,6 +2115,46 @@
     /* ---------------------------------------------------------------------
        12. الإعدادات
        --------------------------------------------------------------------- */
+    /* صفوف تعديل عمولة المنصات — ثابت ونسبة وحد أقصى لكل منصة، مع مثال محسوب */
+    function renderFeeRows() {
+        const zone = $('#fee-rows');
+        if (!zone) return;
+
+        const sample = RATES.nightly;   // سعر ليلة مرجعي للمثال
+
+        zone.innerHTML = FEE_PLATFORMS.map((p) => {
+            const f = feeConf(p);
+            const per = Math.round(platformFee(sample, p));
+            return `<div class="switch" style="flex-wrap:wrap;gap:8px">
+                <div class="switch-info" style="min-width:130px">
+                    <h4>${SOURCE_LABEL[p] || p}</h4>
+                    <p>مثال: ليلة ${sample} ← ${per} ر.س</p>
+                </div>
+                <div style="display:flex;gap:6px;align-items:flex-end;margin-inline-start:auto">
+                    <div class="field" style="margin:0"><label style="font-size:11px">ثابت</label>
+                        <input type="number" class="input" data-fee="${p}" data-fee-key="base" min="0" step="0.01" value="${Number(f.base) || 0}" style="width:82px"></div>
+                    <div class="field" style="margin:0"><label style="font-size:11px">نسبة %</label>
+                        <input type="number" class="input" data-fee="${p}" data-fee-key="rate" min="0" step="0.01" value="${Number(f.rate) || 0}" style="width:82px"></div>
+                    <div class="field" style="margin:0"><label style="font-size:11px">حد أقصى</label>
+                        <input type="number" class="input" data-fee="${p}" data-fee-key="cap" min="0" step="1" value="${Number(f.cap) || 0}" style="width:82px"></div>
+                </div>
+            </div>`;
+        }).join('');
+
+        $$('[data-fee]', zone).forEach((el) => {
+            el.addEventListener('change', () => {
+                if (!state.fees) state.fees = JSON.parse(JSON.stringify(DEFAULT_FEES));
+                const p = el.dataset.fee;
+                if (!state.fees[p]) state.fees[p] = Object.assign({}, DEFAULT_FEES[p]);
+                const v = Math.max(0, Number(el.value) || 0);
+                state.fees[p][el.dataset.feeKey] = v;
+                save();
+                renderFeeRows();
+                toast(`تم تحديث عمولة ${SOURCE_LABEL[p] || p} — اضغط إعادة الحساب لتطبيقها على الحجوزات`);
+            });
+        });
+    }
+
     function renderSettings() {
         $$('#set-lang button').forEach((b) => b.classList.toggle('active', b.dataset.lang === state.settings.lang));
         $('#set-theme').classList.toggle('on', state.settings.theme === 'dark');
@@ -1792,6 +2169,8 @@
         $('#rate-power').value = Number(r.power) || 0;
         $('#rate-cleaning').value = Number(r.cleaning) || 0;
         $('#rate-internet-share').textContent = money(internetShare());
+
+        renderFeeRows();
 
         // تلميح مقارنة: المضيفون المسجّلون في جهات الاتصال + المالك مقابل الرقم المُدخل
         const hosts = state.contacts.filter((c) => c.source === 'host').length;
@@ -1857,11 +2236,15 @@
 
     function closeModal() { $('#modal-back').classList.remove('open'); }
 
-    function openBookingForm(pre) {
-        pre = pre || {};
-        const props = state.properties.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    /* نموذج الحجز — إنشاء (pre = قيم مبدئية) أو تعديل (existing = الحجز القائم) */
+    function openBookingForm(pre, existing) {
+        pre = existing || pre || {};
+        const isEdit = !!existing;
+        const props = state.properties.map((p) => (
+            `<option value="${p.id}"${pre.propertyId === p.id ? ' selected' : ''}>${escapeHtml(p.name)}</option>`
+        )).join('');
 
-        openModal('حجز جديد', `
+        openModal(isEdit ? 'تعديل الحجز' : 'حجز جديد', `
             <div class="field"><label>اسم الضيف</label><input class="input" id="f-guest" value="${escapeHtml(pre.guest || '')}" placeholder="الاسم الكامل"></div>
             <div class="form-row">
                 <div class="field"><label>الجوال</label><input class="input" id="f-phone" value="${escapeHtml(pre.phone || '')}" placeholder="05xxxxxxxx"></div>
@@ -1881,19 +2264,39 @@
                 </select></div>
                 <div class="field"><label>المبلغ الإجمالي</label><input type="number" class="input" id="f-total" placeholder="0" value="${pre.total || ''}"></div>
             </div>
-            <div class="field"><label>ملاحظات</label><textarea class="input" id="f-note" placeholder="طلبات خاصة، وقت الوصول…"></textarea></div>
+            ${isEdit ? `<div class="field"><label>حالة الحجز</label><select class="input" id="f-status">
+                <option value="confirmed"${pre.status === 'confirmed' ? ' selected' : ''}>مؤكد</option>
+                <option value="pending"${pre.status === 'pending' ? ' selected' : ''}>بانتظار التأكيد</option>
+                <option value="completed"${pre.status === 'completed' ? ' selected' : ''}>منتهٍ</option>
+                <option value="blocked"${pre.status === 'blocked' ? ' selected' : ''}>محجوب</option>
+                <option value="cancelled"${pre.status === 'cancelled' ? ' selected' : ''}>ملغي</option>
+            </select></div>` : ''}
+            <div class="field"><label>ملاحظات</label><textarea class="input" id="f-note" placeholder="طلبات خاصة، وقت الوصول…">${escapeHtml(pre.note || '')}</textarea></div>
             <div id="f-hint" style="font-size:12px;color:var(--muted);font-weight:600"></div>`,
             `<button class="btn btn-ghost" id="f-cancel">إلغاء</button>
-             <button class="btn btn-primary" id="f-save">حفظ الحجز</button>`);
+             <button class="btn btn-primary" id="f-save">${isEdit ? 'حفظ التعديل' : 'حفظ الحجز'}</button>`);
 
         if (pre.source) $('#f-source').value = pre.source;
 
         const recalc = () => {
             const n = nightsBetween($('#f-in').value, $('#f-out').value);
             const nightly = state.properties.find((p) => p.id === $('#f-prop').value)?.nightly || 0;
-            $('#f-hint').textContent = n > 0 ? `${n} ليالٍ — السعر المقترح ${money(n * nightly)}` : 'تاريخ المغادرة يجب أن يكون بعد الوصول';
+            const src = $('#f-source').value;
+            const total = Number($('#f-total').value) || (n > 0 ? n * nightly : 0);
+            const fee = bookingFee(total, n, src);
+
+            if (n <= 0) {
+                $('#f-hint').textContent = 'تاريخ المغادرة يجب أن يكون بعد الوصول';
+            } else {
+                // العمولة المتوقعة تظهر مباشرة فيرى المالك الصافي قبل الحفظ
+                $('#f-hint').textContent = fee > 0
+                    ? `${n} ليالٍ — السعر المقترح ${money(n * nightly)} • عمولة ${SOURCE_LABEL[src] || src} ${money(fee)} • الصافي ${money(total - fee)}`
+                    : `${n} ليالٍ — السعر المقترح ${money(n * nightly)} • بلا عمولة`;
+            }
             if (n > 0 && !$('#f-total').value) $('#f-total').value = n * nightly;
         };
+
+        ['#f-total', '#f-source'].forEach((sel) => $(sel).addEventListener('input', recalc));
 
         ['#f-in', '#f-out', '#f-prop'].forEach((sel) => $(sel).addEventListener('change', recalc));
         recalc();
@@ -1908,25 +2311,49 @@
             if (!guest && source !== 'block') return toast('أدخل اسم الضيف', true);
             if (!ci || !co || nightsBetween(ci, co) < 1) return toast('تحقق من التواريخ', true);
 
-            const clash = state.bookings.find((b) => b.status !== 'cancelled' && ci < b.checkout && co > b.checkin);
+            // التعارض يُفحص مع الحجوزات الأخرى فقط — الحجز نفسه لا يتعارض مع نفسه
+            const clash = state.bookings.find((b) => (
+                b.status !== 'cancelled' && (!isEdit || b.id !== existing.id) && ci < b.checkout && co > b.checkin
+            ));
             if (clash) return toast(`تعارض مع حجز ${clash.guest}`, true);
 
             const phone = $('#f-phone').value.trim();
             const saveBtn = $('#f-save');
             saveBtn.disabled = true;
 
-            const booking = await createBooking({
+            const payload = {
                 propertyId: $('#f-prop').value,
                 guest: guest || 'غير متاح (حجب)',
                 phone, source,
                 checkin: ci, checkout: co,
                 total: Number($('#f-total').value) || 0,
-                status: source === 'block' ? 'blocked' : 'confirmed',
+                status: isEdit
+                    ? $('#f-status').value
+                    : (source === 'block' ? 'blocked' : 'confirmed'),
                 note: $('#f-note').value.trim(),
-            });
+            };
+
+            // في التعديل نحتفظ بالحالة السابقة لمطابقة مصروف العمولة القديم قبل تغيّر البيانات
+            const before = isEdit ? Object.assign({}, existing) : null;
+
+            const booking = isEdit
+                ? await updateBooking(existing.id, payload)
+                : await createBooking(payload);
 
             saveBtn.disabled = false;
             if (!booking) return;
+
+            if (isEdit) {
+                const idx = state.bookings.findIndex((x) => x.id === existing.id);
+                if (idx !== -1) state.bookings[idx] = booking;
+                await syncBookingCommission(booking, before);
+                save();
+                closeModal();
+                toast('تم حفظ تعديل الحجز');
+                renderView(currentView());
+                updateBadges();
+                return;
+            }
 
             state.bookings.push(booking);
 
@@ -1942,17 +2369,15 @@
                 pushNotification('booking', 'حجز جديد مؤكد', `${guest} — ${nightsBetween(ci, co)} ليالٍ عبر ${SOURCE_LABEL[source] || source}`);
             }
 
-            // عمولة المنصات تُسجَّل تلقائياً للحجوزات غير المباشرة
-            if (source === 'gathern' || source === 'airbnb') {
-                const fee = bookingFee(booking.total, nightsBetween(ci, co));
-                if (fee > 0) {
-                    const expense = await createExpense({
-                        propertyId: booking.propertyId, category: 'عمولة منصات',
-                        amount: fee, date: todayISO(), dueDate: todayISO(), status: 'due',
-                        note: `${guest} — ${SOURCE_LABEL[source]}`,
-                    });
-                    if (expense) state.expenses.push(expense);
-                }
+            // عمولة المنصات تُسجَّل تلقائياً بإعدادات المنصة المعنيّة
+            const fee = bookingCommission(booking);
+            if (fee > 0) {
+                const expense = await createExpense({
+                    propertyId: booking.propertyId, category: 'عمولة منصات',
+                    amount: fee, date: booking.checkin, dueDate: booking.checkin, status: 'due',
+                    note: feeNote(booking),
+                });
+                if (expense) state.expenses.push(expense);
             }
 
             save();
@@ -1969,15 +2394,38 @@
             <div class="list-item"><div class="li-icon">👤</div><div class="li-body"><h4>${escapeHtml(b.guest)}</h4><p>${escapeHtml(b.phone || 'بدون جوال')}</p></div><div class="li-side"><span class="tag ${tag[0]}">${tag[1]}</span></div></div>
             <div class="list-item"><div class="li-icon">📅</div><div class="li-body"><h4>${fmtDate(b.checkin)} ← ${fmtDate(b.checkout)}</h4><p>${nightsBetween(b.checkin, b.checkout)} ليالٍ</p></div></div>
             <div class="list-item"><div class="li-icon">🔗</div><div class="li-body"><h4>${SOURCE_LABEL[b.source] || b.source}</h4><p>مصدر الحجز</p></div><div class="li-side"><b>${money(b.total)}</b></div></div>
+            ${(() => {
+                const fee = bookingCommission(b);
+                if (!fee) return '';
+                const f = feeConf(b.source);
+                return `<div class="list-item"><div class="li-icon">🧾</div><div class="li-body"><h4>عمولة المنصة</h4><p>${f.base} + ${f.rate}% لكل ليلة${Number(f.cap) > 0 ? ` (بحد ${f.cap})` : ''}</p></div><div class="li-side"><b>${money(fee)}</b><br><span style="font-size:11px;color:var(--muted)">الصافي ${money(Number(b.total) - fee)}</span></div></div>`;
+            })()}
             ${b.note ? `<div class="list-item"><div class="li-icon">📝</div><div class="li-body"><h4>ملاحظات</h4><p>${escapeHtml(b.note)}</p></div></div>` : ''}`,
             `<button class="btn btn-ghost" id="b-del" style="color:var(--danger)">حذف الحجز</button>
+             <button class="btn btn-ghost" id="b-edit">تعديل الحجز</button>
              <button class="btn btn-primary" id="b-close">إغلاق</button>`);
 
         $('#b-close').addEventListener('click', closeModal);
+
+        // التعديل يفتح النموذج نفسه محمَّلاً ببيانات الحجز
+        $('#b-edit').addEventListener('click', () => {
+            closeModal();
+            openBookingForm(null, b);
+        });
+
         $('#b-del').addEventListener('click', async () => {
+            if (!confirm(`حذف حجز «${b.guest}»؟ ستُحذف معه عمولة المنصة المسجَّلة.`)) return;
+
             const ok = await deleteBooking(b.id);
             if (!ok) return;
             state.bookings = state.bookings.filter((x) => x.id !== b.id);
+
+            // مصروف العمولة يُحذف مع الحجز فلا تبقى مصاريف معلّقة بلا حجز
+            const exp = findFeeExpense(b, new Set());
+            if (exp && await deleteExpense(exp.id)) {
+                state.expenses = state.expenses.filter((x) => x.id !== exp.id);
+            }
+
             save();
             closeModal();
             toast('تم حذف الحجز');
@@ -2312,6 +2760,40 @@
         });
 
         $('#btn-seed-ops').addEventListener('click', (e) => seedOpsContacts(e.currentTarget));
+        $('#btn-recalc-fees').addEventListener('click', (e) => recalcCommissions(e.currentTarget));
+
+        // تبديل الحجوزات القادمة/السابقة في اللوحة
+        $$('#upcoming-mode button').forEach((b) => {
+            b.addEventListener('click', () => {
+                upcomingMode = b.dataset.um;
+                renderUpcoming();
+            });
+        });
+
+        // فلترة تاريخ بطاقة إيرادات السنة
+        $$('#year-preset button').forEach((b) => {
+            b.addEventListener('click', () => {
+                yearRange.preset = b.dataset.yr;
+                if (yearRange.preset === 'custom' && !yearRange.from) {
+                    const y = new Date().getFullYear();
+                    yearRange.from = `${y}-01-01`;
+                    yearRange.to = todayISO();
+                }
+                renderYearRevenue();
+            });
+        });
+
+        ['#year-from', '#year-to'].forEach((sel) => {
+            $(sel).addEventListener('change', () => {
+                const from = $('#year-from').value;
+                const to = $('#year-to').value;
+                if (from && to && from > to) return toast('تاريخ البداية بعد النهاية', true);
+                yearRange.preset = 'custom';
+                yearRange.from = from;
+                yearRange.to = to;
+                renderYearRevenue();
+            });
+        });
 
         // التقويم
         $('#cal-prev').addEventListener('click', () => { calCursor.setMonth(calCursor.getMonth() - 1); renderCalendar(); });
