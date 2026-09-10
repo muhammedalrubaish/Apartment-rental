@@ -607,14 +607,14 @@
         const year = rangeStats(`${yr}-01-01`, `${yr}-12-31`);
 
         const kpis = [
-            { label: 'إيرادات الشهر', value: money(s.revenue), icon: '💰', color: 'var(--ok)', soft: 'var(--ok-soft)',
-              foot: s.commission
-                  ? `إجمالي ${money(s.gross)} − عمولة ${money(s.commission)}`
-                  : `<span class="kpi-trend ${s.growth >= 0 ? 'up' : 'down'}">${s.growth >= 0 ? '▲' : '▼'} ${Math.abs(s.growth)}%</span> مقارنة بالشهر الماضي` },
             { label: `إيرادات السنة ${yr}`, value: money(year.revenue), icon: '📅', color: 'var(--ok)', soft: 'var(--ok-soft)',
               foot: year.fees
                   ? `إجمالي ${money(year.gross)} − عمولة ${money(year.fees)}`
                   : `${year.count} حجز • ${year.nights} ليلة منذ يناير` },
+            { label: 'إيرادات الشهر', value: money(s.revenue), icon: '💰', color: 'var(--ok)', soft: 'var(--ok-soft)',
+              foot: s.commission
+                  ? `إجمالي ${money(s.gross)} − عمولة ${money(s.commission)}`
+                  : `<span class="kpi-trend ${s.growth >= 0 ? 'up' : 'down'}">${s.growth >= 0 ? '▲' : '▼'} ${Math.abs(s.growth)}%</span> مقارنة بالشهر الماضي` },
             { label: 'المصاريف التشغيلية', value: money(s.expenses), icon: '🧾', color: 'var(--brand)', soft: 'var(--brand-soft)',
               foot: `هذا الشهر • ${s.dueCount} فاتورة غير مسددة بقيمة ${money(s.dueBills)}` },
             // صافي الربح على مستوى السنة لا الشهر — الصورة الأشمل لأداء الوحدة
