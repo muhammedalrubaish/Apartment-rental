@@ -1368,11 +1368,15 @@
     /* عمود commission أُضيف بهجرة 0004. إن لم تُطبَّق الهجرة بعد ترفض Supabase
        الصف بالخطأ 42703 / PGRST204، فنعيد المحاولة دون العمود ونبلّغ المالك
        بدل أن يفشل حفظ الحجز كلياً. */
-    function isMissingCommissionColumn(error) {
+    function isMissingColumn(error, column) {
         if (!error) return false;
         const code = error.code || '';
         const msg = `${error.message || ''}${error.details || ''}`;
-        return (code === '42703' || code === 'PGRST204') && msg.indexOf('commission') !== -1;
+        return (code === '42703' || code === 'PGRST204') && msg.indexOf(column) !== -1;
+    }
+
+    function isMissingCommissionColumn(error) {
+        return isMissingColumn(error, 'commission');
     }
 
     let commissionColumnMissing = false;
@@ -1502,6 +1506,8 @@
         return {
             id: r.id, name: r.name, phone: r.phone || '', email: r.email || '',
             source: r.source, note: r.note || '',
+            // أرقام جهات اتصال دُمجت في هذه — مخزّنة نصاً مفصولاً بفواصل
+            altPhones: String(r.alt_phones || '').split(',').map((x) => x.trim()).filter(Boolean),
             createdAt: r.created_at ? r.created_at.slice(0, 10) : todayISO(),
         };
     }
@@ -1510,7 +1516,18 @@
         return {
             name: c.name, phone: c.phone || '', email: c.email || '',
             source: c.source, note: c.note || '',
+            alt_phones: (c.altPhones || []).join(','),
         };
+    }
+
+    /* عمود alt_phones أُضيف بهجرة 0005 — إن لم تُطبَّق نحفظ دون الأرقام
+       البديلة ونبلّغ المالك بدل أن يفشل الحفظ */
+    let altPhonesWarned = false;
+
+    function warnAltPhonesColumn() {
+        if (altPhonesWarned) return;
+        altPhonesWarned = true;
+        toast('حُفظ دون الأرقام المدموجة — نفّذ هجرة 0005 في Supabase', true);
     }
 
     async function loadContacts() {
@@ -1536,11 +1553,18 @@
         const client = sbc();
         if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
-        const { data, error } = await client
+        let { data, error } = await client
             .from('contacts')
             .insert(contactToRow(contact))
             .select()
             .single();
+
+        if (isMissingColumn(error, 'alt_phones')) {
+            const row = contactToRow(contact);
+            delete row.alt_phones;
+            ({ data, error } = await client.from('contacts').insert(row).select().single());
+            if (!error) warnAltPhonesColumn();
+        }
 
         if (error) {
             // 23505 = تكرار الجوال؛ ليست خطأً فعلياً عند المزامنة التلقائية
@@ -1555,12 +1579,19 @@
         const client = sbc();
         if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
-        const { data, error } = await client
+        let { data, error } = await client
             .from('contacts')
             .update(contactToRow(patch))
             .eq('id', id)
             .select()
             .single();
+
+        if (isMissingColumn(error, 'alt_phones')) {
+            const row = contactToRow(patch);
+            delete row.alt_phones;
+            ({ data, error } = await client.from('contacts').update(row).eq('id', id).select().single());
+            if (!error) warnAltPhonesColumn();
+        }
 
         if (error) {
             reportDbError('contacts', 'تعذّر حفظ التعديل', error);
@@ -1698,7 +1729,7 @@
 
         for (const c of msg.conversations) {
             if (!c.visitor_phone || !c.visitor_name) continue;
-            if (state.contacts.some((x) => x.phone === c.visitor_phone)) continue;
+            if (findContactByPhone(c.visitor_phone)) continue;
             if (isDismissedChatPhone(c.visitor_phone)) continue;   // حذفها المالك عمداً
 
             const contact = await createContact({
@@ -2167,9 +2198,119 @@
         if (failed) toast(`تعذّر إضافة ${failed} جهة — راجع أرقام الجوال المكرّرة`, true);
     }
 
+    /* ---------------------------------------------------------------------
+       مطابقة أرقام الجوال ودمج جهات الاتصال
+       --------------------------------------------------------------------- */
+
+    /* توحيد صيغة الرقم قبل المقارنة: 0501234567 و +966501234567 و 966 50 123 4567
+       كلها الرقم نفسه. الأرقام غير السعودية تُقارن بأرقامها المجرّدة فقط. */
+    function normPhone(phone) {
+        let d = String(phone || '').replace(/\D/g, '');
+        if (!d) return '';
+        if (d.slice(0, 2) === '00') d = d.slice(2);          // بادئة دولية 00
+        if (d.length === 10 && d.slice(0, 2) === '05') return '966' + d.slice(1);
+        if (d.length === 9 && d[0] === '5') return '966' + d;
+        return d;
+    }
+
+    /* كل أرقام جهة الاتصال: الأساسي وأرقام الجهات المدموجة فيها */
+    function contactPhones(c) {
+        return [c.phone].concat(c.altPhones || [])
+            .map(normPhone)
+            .filter(Boolean);
+    }
+
+    function contactMatchesPhone(c, phone) {
+        const n = normPhone(phone);
+        return !!n && contactPhones(c).indexOf(n) !== -1;
+    }
+
+    function findContactByPhone(phone) {
+        const n = normPhone(phone);
+        if (!n) return null;
+        return state.contacts.find((c) => contactPhones(c).indexOf(n) !== -1) || null;
+    }
+
+    /* حجوزات جهة الاتصال — تشمل حجوزات الأرقام المدموجة فيها،
+       فيظهر ضيف حجز مرة من المنصة ومرة عبر واتساب كسجل واحد */
+    function bookingsOfContact(c) {
+        const set = contactPhones(c);
+        if (!set.length) return [];
+        return realBookings().filter((b) => b.phone && set.indexOf(normPhone(b.phone)) !== -1);
+    }
+
     /* رقم واتساب دولي من رقم محلي */
     function waNumber(phone) {
         return (phone || '').replace(/^0/, '966').replace(/\D/g, '');
+    }
+
+    /* دمج جهة اتصال في أخرى: الرقم الثانوي يُحفظ ضمن أرقام الجهة الأساسية
+       فتُحتسب حجوزاته لها، ثم يُحذف السجل المكرّر. لا يمسّ الحجوزات نفسها. */
+    function openMergeForm(primary) {
+        const others = state.contacts.filter((c) => c.id !== primary.id);
+        if (!others.length) return toast('لا توجد جهة اتصال أخرى للدمج', true);
+
+        const options = others.map((c) => {
+            const n = bookingsOfContact(c).length;
+            return `<option value="${c.id}">${escapeHtml(c.name)} — ${escapeHtml(c.phone || 'بلا رقم')}${n ? ` (${n} حجز)` : ''}</option>`;
+        }).join('');
+
+        openModal('دمج جهة اتصال', `
+            <p style="font-size:12.5px;color:var(--text-dim);line-height:1.9;margin-bottom:14px">
+                اختر السجل المكرّر لنفس الشخص. سيُحذف السجل المختار ويُضاف رقمه إلى
+                <b>${escapeHtml(primary.name)}</b>، فتُحتسب حجوزاته وإنفاقه ضمنها.
+            </p>
+            <div class="field"><label>السجل المراد دمجه في «${escapeHtml(primary.name)}»</label>
+                <select class="input" id="mg-src">${options}</select></div>
+            <div id="mg-preview" style="font-size:12px;color:var(--muted);font-weight:600;line-height:1.9"></div>`,
+            `<button class="btn btn-ghost" id="mg-cancel">إلغاء</button>
+             <button class="btn btn-primary" id="mg-save">دمج</button>`);
+
+        const preview = () => {
+            const src = state.contacts.find((c) => c.id === $('#mg-src').value);
+            if (!src) return;
+            const after = bookingsOfContact(primary).length + bookingsOfContact(src).length;
+            $('#mg-preview').textContent =
+                `بعد الدمج: ${escapeHtml(primary.name)} — ${after} حجز، وأرقامه: `
+                + [primary.phone].concat(primary.altPhones || [], [src.phone])
+                    .filter(Boolean).join(' • ');
+        };
+        $('#mg-src').addEventListener('change', preview);
+        preview();
+
+        $('#mg-cancel').addEventListener('click', closeModal);
+        $('#mg-save').addEventListener('click', async () => {
+            const src = state.contacts.find((c) => c.id === $('#mg-src').value);
+            if (!src) return;
+            if (!confirm(`دمج «${src.name}» في «${primary.name}»؟ سيُحذف سجل «${src.name}».`)) return;
+
+            const btn = $('#mg-save');
+            btn.disabled = true;
+
+            const alts = (primary.altPhones || []).slice();
+            [src.phone].concat(src.altPhones || []).forEach((ph) => {
+                if (ph && alts.indexOf(ph) === -1 && normPhone(ph) !== normPhone(primary.phone)) alts.push(ph);
+            });
+
+            const saved = await updateContact(primary.id, Object.assign({}, primary, { altPhones: alts }));
+            if (!saved) { btn.disabled = false; return; }
+
+            const removed = await deleteContact(src.id);
+            btn.disabled = false;
+            if (!removed) return;
+
+            const idx = state.contacts.findIndex((x) => x.id === primary.id);
+            if (idx !== -1) state.contacts[idx] = saved;
+            state.contacts = state.contacts.filter((x) => x.id !== src.id);
+
+            // الرقم المدموج لا يُعاد إنشاؤه من مزامنة محادثات الموقع
+            dismissChatPhone(src.phone);
+
+            save();
+            closeModal();
+            toast(`تم دمج «${src.name}» في «${primary.name}»`);
+            renderContacts();
+        });
     }
 
     function renderContacts() {
@@ -2223,14 +2364,15 @@
                 </tr>`;
             }
 
-            const bk = realBookings().filter((b) => b.phone && b.phone === c.phone);
+            const bk = bookingsOfContact(c);
             const spend = bk.reduce((s, b) => s + Number(b.total || 0), 0);
             const last = bk.map((b) => b.checkin).sort().pop();
             const ops = isOpsContact(c);
 
+            const extra = (c.altPhones || []).length;
             return `<tr>
                 <td>${ops ? (OPS_ICON[c.source] || '👤') + ' ' : ''}${escapeHtml(c.name)}${c.note ? `<br><span style="font-size:11px;color:var(--muted);font-weight:500">${escapeHtml(c.note)}</span>` : ''}</td>
-                <td class="num dim">${escapeHtml(c.phone || '—')}</td>
+                <td class="num dim">${escapeHtml(c.phone || '—')}${extra ? `<br><span style="font-size:10.5px;color:var(--muted);font-weight:600" title="أرقام مدموجة">🔗 ${(c.altPhones || []).map(escapeHtml).join(' • ')}</span>` : ''}</td>
                 <td><span class="tag ${ops ? 'tag-info' : 'tag-mute'}">${SOURCE_LABEL[c.source] || c.source}</span></td>
                 <td class="num">${ops ? '—' : bk.length}</td>
                 <td class="num">${ops ? '—' : money(spend)}</td>
@@ -2239,6 +2381,7 @@
                     <div style="display:flex;gap:6px;justify-content:flex-end">
                         ${wa ? `<a class="btn btn-ghost btn-sm" href="https://wa.me/${wa}" target="_blank" rel="noopener">واتساب</a>` : ''}
                         ${ops ? '' : `<button class="btn btn-ghost btn-sm" data-book-contact="${c.id}">حجز</button>`}
+                        <button class="btn btn-ghost btn-sm" data-merge-contact="${c.id}" title="دمج سجل مكرّر لنفس الشخص">دمج</button>
                         <button class="btn btn-ghost btn-sm" data-edit-contact="${c.id}">تعديل</button>
                         <button class="btn btn-ghost btn-sm" data-del-contact="${c.id}" style="color:var(--danger)">حذف</button>
                     </div>
@@ -2249,6 +2392,11 @@
         $$('[data-book-contact]').forEach((btn) => {
             const c = state.contacts.find((x) => x.id === btn.dataset.bookContact);
             btn.addEventListener('click', () => openBookingForm({ guest: c.name, phone: c.phone, source: 'direct' }));
+        });
+
+        $$('[data-merge-contact]').forEach((btn) => {
+            const c = state.contacts.find((x) => x.id === btn.dataset.mergeContact);
+            btn.addEventListener('click', () => openMergeForm(c));
         });
 
         $$('[data-edit-contact]').forEach((btn) => {
@@ -2633,7 +2781,7 @@
             state.bookings.push(booking);
 
             // إنشاء جهة اتصال تلقائياً إن لم تكن موجودة
-            if (phone && !state.contacts.some((c) => c.phone === phone)) {
+            if (phone && !findContactByPhone(phone)) {
                 const contact = await createContact({
                     name: guest, phone, email: '', source, note: 'أُضيف تلقائياً من حجز',
                 });
@@ -2827,7 +2975,7 @@
             if (!name) return toast('أدخل الاسم', true);
 
             const phone = $('#c-phone').value.trim();
-            if (phone && state.contacts.some((x) => x.phone === phone && x.id !== c.id)) {
+            if (phone && state.contacts.some((x) => x.id !== c.id && contactMatchesPhone(x, phone))) {
                 return toast('هذا الجوال مسجّل مسبقاً', true);
             }
 

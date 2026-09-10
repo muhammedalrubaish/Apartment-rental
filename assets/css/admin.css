@@ -538,6 +538,10 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 .cal-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-dim); font-weight: 600; margin-top: 12px; }
 .cal-legend i { width: 12px; height: 12px; border-radius: 4px; display: inline-block; margin-inline-end: 5px; vertical-align: -2px; }
 
+/* أقسام الإعدادات تحت بعضها بعمود واحد — كل بطاقة بعرض الصفحة كاملاً
+   بدل أعمدة ضيقة تتزاحم فيها الحقول على الشاشات العريضة */
+#view-settings .grid { grid-template-columns: minmax(0, 1fr); }
+
 /* ---------- 11. الرسائل ---------- */
 .chat { display: grid; grid-template-columns: 290px 1fr; gap: 0; min-height: 540px; }
 .chat-list { border-inline-end: 1px solid var(--line); overflow-y: auto; max-height: 620px; }
