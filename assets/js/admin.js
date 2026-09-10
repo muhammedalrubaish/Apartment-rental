@@ -1066,20 +1066,53 @@
             return;
         }
 
-        $('#cal-month-list').innerHTML = list.map((b) => {
+        // الإجماليات تحسب الحجوزات الفعلية فقط دون الملغي والمحجوب
+        const real = list.filter((b) => b.status !== 'cancelled' && b.status !== 'blocked');
+        const gross = real.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+        const fees = real.reduce((sum, b) => sum + bookingCommissionAmount(b), 0);
+
+        const rows = list.map((b) => {
             const tag = STATUS_TAG[b.status] || ['tag-mute', b.status];
-            return `<div class="list-item">
-                <div class="li-icon">${b.status === 'blocked' ? '🚧' : '🛏️'}</div>
-                <div class="li-body">
-                    <h4>${escapeHtml(b.guest)}</h4>
-                    <p>${fmtDate(b.checkin)} ← ${fmtDate(b.checkout)} • ${nightsBetween(b.checkin, b.checkout)} ليالٍ • ${SOURCE_LABEL[b.source] || b.source}</p>
-                </div>
-                <div class="li-side">
-                    <b>${b.total ? money(b.total) : '—'}</b>
-                    <span class="tag ${tag[0]}">${tag[1]}</span>
-                </div>
-            </div>`;
+            const fee = bookingCommissionAmount(b);
+            const total = Number(b.total) || 0;
+            return `<tr data-open-booking="${b.id}" style="cursor:pointer" title="اضغط لعرض التفاصيل والتعديل">
+                <td>
+                    ${b.status === 'blocked' ? '🚧' : '🛏️'} ${escapeHtml(b.guest)}
+                    <br><span style="font-size:10.5px;color:var(--muted);font-weight:600">${fmtDate(b.checkin)} ← ${fmtDate(b.checkout)} • ${nightsBetween(b.checkin, b.checkout)} ليالٍ</span>
+                </td>
+                <td class="dim">${SOURCE_LABEL[b.source] || b.source}</td>
+                <td class="num">${total ? money(total) : '—'}</td>
+                <td class="num dim">${fee ? '−' + money(fee) : '—'}</td>
+                <td class="num" style="font-weight:800">${total ? money(total - fee) : '—'}</td>
+                <td><span class="tag ${tag[0]}">${tag[1]}</span></td>
+            </tr>`;
         }).join('');
+
+        $('#cal-month-list').innerHTML = `
+            <div class="table-wrap" style="margin-bottom:0">
+                <table>
+                    <thead><tr>
+                        <th>الضيف</th><th>المصدر</th><th>المبلغ الإجمالي</th>
+                        <th>عمولة المنصة</th><th>الإيراد الواصل لي</th><th>حالة الحجز</th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                    <tfoot><tr style="font-weight:800;background:var(--surface-2)">
+                        <td>الإجمالي</td>
+                        <td class="dim">${real.length} حجز</td>
+                        <td class="num">${money(gross)}</td>
+                        <td class="num dim">${fees ? '−' + money(fees) : '—'}</td>
+                        <td class="num" style="color:var(--ok)">${money(gross - fees)}</td>
+                        <td></td>
+                    </tr></tfoot>
+                </table>
+            </div>`;
+
+        $$('[data-open-booking]', $('#cal-month-list')).forEach((tr) => {
+            tr.addEventListener('click', () => {
+                const b = state.bookings.find((x) => x.id === tr.dataset.openBooking);
+                if (b) openBookingDetails(b);
+            });
+        });
     }
 
     function renderSyncList() {
