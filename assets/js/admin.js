@@ -14,8 +14,33 @@
        رمز الدخول هو كلمة سر حساب المالك الفعلي؛ الدخول ينشئ جلسة حقيقية
        (JWT) تمنح صلاحية القراءة والكتابة على الرسائل بحكم سياسات RLS
        (role = authenticated)، وليست مجرد إخفاء واجهة كما كانت سابقاً.
+
+       البصمة والرمز الاحتياطي يحرسان الواجهة فقط ولا يمنحان صلاحية بيانات؛
+       لذلك لا يفتحان اللوحة إلا مع وجود جلسة Supabase صالحة، وإلا رُفضت كل
+       عمليات القراءة والكتابة من RLS وظهرت اللوحة فارغة دون تفسير.
        --------------------------------------------------------------------- */
     const OWNER_EMAIL = 'muhammedalrubaish@gmail.com';
+
+    /* جلسة Supabase المحفوظة إن وُجدت — تُجدَّد تلقائياً إذا انتهت صلاحيتها */
+    async function supabaseSession() {
+        const client = window.getSupabaseClient ? window.getSupabaseClient() : null;
+        if (!client) return null;
+
+        try {
+            const { data, error } = await client.auth.getSession();
+            if (error || !data || !data.session) return null;
+
+            const now = Math.floor(Date.now() / 1000);
+            if (data.session.expires_at && data.session.expires_at <= now) {
+                const { data: fresh } = await client.auth.refreshSession();
+                return (fresh && fresh.session) || null;
+            }
+            return data.session;
+        } catch (e) {
+            console.warn('[gate] تعذّر قراءة جلسة Supabase:', e);
+            return null;
+        }
+    }
 
     function unlock() {
         const lock = document.getElementById('lock');
@@ -47,26 +72,34 @@
 
         if (!form) return unlock();                       // لا توجد بوابة
 
-        // جلسة موحّدة محفوظة مسبقاً (بصمة/كلمة سر عبر أي من صفحتَي المالك)
-        if (gate && gate.isSessionValid()) return unlock();
+        // جلسة قاعدة البيانات هي مصدر الصلاحية الوحيد؛ البصمة والجلسة الموحّدة
+        // تحرسان الواجهة فوقها ولا تحلّان محلّها.
+        const hasDbSession = !!(await supabaseSession());
 
-        // جلسة Supabase محفوظة مسبقاً
-        if (client) {
-            const { data } = await client.auth.getSession();
-            if (data && data.session) return unlock();
-        }
+        if (hasDbSession) {
+            // القفل المحلي سليم، أو لا بصمة مسجّلة على الجهاز → دخول مباشر
+            if (!gate || gate.isSessionValid() || !gate.hasRegisteredBiometric()) return unlock();
 
-        if (bioBtn && gate && gate.hasBiometricSupport() && gate.hasRegisteredBiometric()) {
-            bioBtn.hidden = false;
-            bioBtn.addEventListener('click', async () => {
-                bioBtn.disabled = true;
-                bioBtn.textContent = 'جارٍ التحقق بالبصمة…';
-                const ok = await gate.tryBiometric();
-                bioBtn.disabled = false;
-                bioBtn.textContent = '🫆 الدخول بالبصمة';
-                if (ok) return unlock();
-                err.textContent = 'تعذّر التحقق بالبصمة — استخدم رمز الدخول';
-            });
+            // انتهى القفل المحلي (12 ساعة) والبصمة مسجّلة → يكفي التحقق بالبصمة
+            if (bioBtn && gate.hasBiometricSupport()) {
+                bioBtn.hidden = false;
+                bioBtn.addEventListener('click', async () => {
+                    bioBtn.disabled = true;
+                    bioBtn.textContent = 'جارٍ التحقق بالبصمة…';
+                    const ok = await gate.tryBiometric();
+                    bioBtn.disabled = false;
+                    bioBtn.textContent = '🫆 الدخول بالبصمة';
+                    if (ok) return unlock();
+                    err.textContent = 'تعذّر التحقق بالبصمة — استخدم رمز الدخول';
+                });
+            }
+        } else if (gate) {
+            // لا جلسة بيانات: لا نفتح اللوحة مهما كان القفل المحلي، لأنها ستظهر
+            // فارغة ويفشل كل حفظ. الجلسة الموحّدة تُترك كما هي لأنها مشتركة مع
+            // صفحة التحصيل التي تعمل محلياً بلا قاعدة بيانات.
+            if (gate.isSessionValid() || gate.hasRegisteredBiometric()) {
+                err.textContent = 'انتهت جلسة قاعدة البيانات — أدخل رمز المالك مرة واحدة لتجديدها، وتعود البصمة للعمل بعدها';
+            }
         }
 
         input.focus();
@@ -75,8 +108,15 @@
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // كلمة السر الاحتياطية إذا تعذّرت البصمة (دخول محلي دون جلسة Supabase حقيقية)
-            if (gate && gate.isFallbackPassword(input.value)) return unlock();
+            // الرمز الاحتياطي يرفع القفل المحلي فقط؛ لا يفتح اللوحة إلا إذا كانت
+            // جلسة قاعدة البيانات قائمة أصلاً، وإلا فتحنا لوحة لا تقرأ ولا تحفظ.
+            if (gate && gate.isFallbackPassword(input.value)) {
+                if (await supabaseSession()) return unlock();
+                err.textContent = 'الرمز الاحتياطي يفتح الواجهة فقط — أدخل رمز المالك الحقيقي لتفعيل قراءة البيانات وحفظها';
+                input.value = '';
+                input.focus();
+                return;
+            }
 
             if (!client) {
                 err.textContent = 'تعذّر الاتصال بالخادم — تحقق من الإنترنت';
@@ -859,6 +899,56 @@
     }
 
     /* ---------------------------------------------------------------------
+       تشخيص أخطاء قاعدة البيانات
+       رسالة واحدة عامة لكل الأسباب كانت تخفي الفرق بين مشروع موقوف، وانقطاع
+       إنترنت، وجلسة منتهية ترفضها سياسات RLS. هذه الطبقة تترجم خطأ Supabase
+       الخام إلى سبب صريح يعرف المستخدم معه ما الذي يفعله.
+       --------------------------------------------------------------------- */
+    const AUTH_ERROR_CODES = ['42501', 'PGRST301', 'PGRST302'];
+
+    function isAuthError(error) {
+        if (!error) return false;
+        if (error.status === 401 || error.status === 403) return true;
+        if (AUTH_ERROR_CODES.indexOf(error.code) !== -1) return true;
+        return /row-level security|permission denied|jwt/i.test(error.message || '');
+    }
+
+    function isNetworkError(error) {
+        if (!error) return false;
+        if (error.status === 0 || error.name === 'AuthRetryableFetchError') return true;
+        return /failed to fetch|networkerror|load failed|fetch failed/i.test(error.message || '');
+    }
+
+    function dbErrorMessage(error, action) {
+        if (isNetworkError(error)) {
+            return `${action} — تعذّر الوصول لقاعدة البيانات. تحقق من الإنترنت ومن أن مشروع Supabase غير موقوف`;
+        }
+        if (isAuthError(error)) {
+            return `${action} — انتهت جلسة المالك. سجّل الخروج ثم ادخل برمز المالك لتجديدها`;
+        }
+        if (error && error.code === '42P01') return `${action} — الجدول غير موجود في قاعدة البيانات`;
+        if (error && error.code === '23503') return `${action} — السجل المرتبط (الوحدة) غير موجود`;
+        if (error && error.code === '23505') return `${action} — السجل مسجّل مسبقاً`;
+        return `${action}${error && error.message ? ` — ${error.message}` : ''}`;
+    }
+
+    function reportDbError(scope, action, error) {
+        console.error(`[${scope}] ${action}:`, error);
+        toast(dbErrorMessage(error, action), true);
+    }
+
+    /* أخطاء التحميل تقع دفعة واحدة عند الإقلاع (حجوزات + مصاريف + جهات اتصال…)
+       فنعرض السبب مرة واحدة بدل إغراق الشاشة بتنبيهات متطابقة */
+    let loadErrorShown = false;
+
+    function reportLoadError(scope, action, error) {
+        console.error(`[${scope}] ${action}:`, error);
+        if (loadErrorShown) return;
+        loadErrorShown = true;
+        toast(dbErrorMessage(error, action), true);
+    }
+
+    /* ---------------------------------------------------------------------
        جدول الحجوزات الحقيقي في Supabase (public.bookings)
        --------------------------------------------------------------------- */
     function bookingFromRow(r) {
@@ -886,7 +976,7 @@
             .select('*')
             .order('checkin', { ascending: true });
 
-        if (error) { console.error('[bookings] فشل تحميل الحجوزات:', error); return; }
+        if (error) { reportLoadError('bookings', 'تعذّر تحميل الحجوزات', error); return; }
 
         state.bookings = (data || []).map(bookingFromRow);
         save();
@@ -896,7 +986,7 @@
 
     async function createBooking(booking) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return null; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
         const { data, error } = await client
             .from('bookings')
@@ -904,16 +994,16 @@
             .select()
             .single();
 
-        if (error) { console.error('[bookings] فشل حفظ الحجز:', error); toast('تعذّر حفظ الحجز', true); return null; }
+        if (error) { reportDbError('bookings', 'تعذّر حفظ الحجز', error); return null; }
         return bookingFromRow(data);
     }
 
     async function deleteBooking(id) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return false; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return false; }
 
         const { error } = await client.from('bookings').delete().eq('id', id);
-        if (error) { console.error('[bookings] فشل حذف الحجز:', error); toast('تعذّر حذف الحجز', true); return false; }
+        if (error) { reportDbError('bookings', 'تعذّر حذف الحجز', error); return false; }
         return true;
     }
 
@@ -944,7 +1034,7 @@
             .select('*')
             .order('created_at', { ascending: false });
 
-        if (error) { console.error('[contacts] فشل تحميل جهات الاتصال:', error); return; }
+        if (error) { reportLoadError('contacts', 'تعذّر تحميل جهات الاتصال', error); return; }
 
         state.contacts = (data || []).map(contactFromRow);
         save();
@@ -956,7 +1046,7 @@
 
     async function createContact(contact) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return null; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
         const { data, error } = await client
             .from('contacts')
@@ -967,8 +1057,7 @@
         if (error) {
             // 23505 = تكرار الجوال؛ ليست خطأً فعلياً عند المزامنة التلقائية
             if (error.code === '23505') return null;
-            console.error('[contacts] فشل حفظ جهة الاتصال:', error);
-            toast('تعذّر حفظ جهة الاتصال', true);
+            reportDbError('contacts', 'تعذّر حفظ جهة الاتصال', error);
             return null;
         }
         return contactFromRow(data);
@@ -976,7 +1065,7 @@
 
     async function updateContact(id, patch) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return null; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
         const { data, error } = await client
             .from('contacts')
@@ -986,8 +1075,7 @@
             .single();
 
         if (error) {
-            console.error('[contacts] فشل تعديل جهة الاتصال:', error);
-            toast('تعذّر حفظ التعديل', true);
+            reportDbError('contacts', 'تعذّر حفظ التعديل', error);
             return null;
         }
         return contactFromRow(data);
@@ -995,12 +1083,11 @@
 
     async function deleteContact(id) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return false; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return false; }
 
         const { error } = await client.from('contacts').delete().eq('id', id);
         if (error) {
-            console.error('[contacts] فشل حذف جهة الاتصال:', error);
-            toast('تعذّر حذف جهة الاتصال', true);
+            reportDbError('contacts', 'تعذّر حذف جهة الاتصال', error);
             return false;
         }
         return true;
@@ -1034,7 +1121,7 @@
             .select('*')
             .order('due_date', { ascending: true });
 
-        if (error) { console.error('[expenses] فشل تحميل المصاريف:', error); return; }
+        if (error) { reportLoadError('expenses', 'تعذّر تحميل المصاريف', error); return; }
 
         state.expenses = (data || []).map(expenseFromRow);
         save();
@@ -1044,7 +1131,7 @@
 
     async function createExpense(expense) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return null; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
         const { data, error } = await client
             .from('expenses')
@@ -1052,13 +1139,13 @@
             .select()
             .single();
 
-        if (error) { console.error('[expenses] فشل حفظ المصروف:', error); toast('تعذّر حفظ المصروف', true); return null; }
+        if (error) { reportDbError('expenses', 'تعذّر حفظ المصروف', error); return null; }
         return expenseFromRow(data);
     }
 
     async function updateExpense(id, patch) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return null; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return null; }
 
         const { data, error } = await client
             .from('expenses')
@@ -1067,16 +1154,16 @@
             .select()
             .single();
 
-        if (error) { console.error('[expenses] فشل تعديل المصروف:', error); toast('تعذّر تعديل المصروف', true); return null; }
+        if (error) { reportDbError('expenses', 'تعذّر تعديل المصروف', error); return null; }
         return expenseFromRow(data);
     }
 
     async function deleteExpense(id) {
         const client = sbc();
-        if (!client) { toast('تعذّر الاتصال بقاعدة البيانات', true); return false; }
+        if (!client) { toast('مكتبة قاعدة البيانات لم تُحمَّل — أعد تحميل الصفحة', true); return false; }
 
         const { error } = await client.from('expenses').delete().eq('id', id);
-        if (error) { console.error('[expenses] فشل حذف المصروف:', error); toast('تعذّر حذف المصروف', true); return false; }
+        if (error) { reportDbError('expenses', 'تعذّر حذف المصروف', error); return false; }
         return true;
     }
 
@@ -1089,7 +1176,7 @@
             .select('*')
             .order('last_at', { ascending: false });
 
-        if (error) { console.error('[messages] فشل تحميل المحادثات:', error); return; }
+        if (error) { reportLoadError('messages', 'تعذّر تحميل المحادثات', error); return; }
 
         msg.conversations = data || [];
         msg.loaded = true;
@@ -1135,7 +1222,7 @@
             .eq('conversation_id', id)
             .order('created_at', { ascending: true });
 
-        if (error) { console.error('[messages] فشل تحميل الرسائل:', error); return []; }
+        if (error) { reportLoadError('messages', 'تعذّر تحميل الرسائل', error); return []; }
         return data || [];
     }
 
@@ -1147,7 +1234,7 @@
             .from('messages')
             .insert({ conversation_id: id, sender: 'owner', body: text });
 
-        if (error) { console.error('[messages] فشل إرسال الرد:', error); return false; }
+        if (error) { reportDbError('messages', 'تعذّر إرسال الرد', error); return false; }
         return true;
     }
 
