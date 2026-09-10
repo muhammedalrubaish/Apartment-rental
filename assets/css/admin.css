@@ -97,6 +97,11 @@ a { color: inherit; text-decoration: none; }
     /* القائمة أولاً في DOM؛ في RTL تظهر يميناً تلقائياً */
     min-height: 100vh;
     min-height: 100dvh;
+    /* هامش الصفحة هنا لا على الأبناء: الشريط الجانبي والمحتوى يتشاركان
+       صندوق المحتوى نفسه، فتتطابق حوافهما العلوية والسفلية بالبناء
+       لا بحساب أرقام قد تختلف بين المتصفحات */
+    padding: var(--page-pad);
+    gap: var(--page-pad);
 }
 
 /* ---------- 3. الشريط الجانبي (يمين) ---------- */
@@ -105,7 +110,7 @@ a { color: inherit; text-decoration: none; }
     flex-shrink: 0;
     background: var(--rail);
     border-radius: 22px;
-    margin: var(--page-pad);
+    margin: 0;
     padding: 14px 8px;
     display: flex;
     flex-direction: column;
@@ -113,23 +118,26 @@ a { color: inherit; text-decoration: none; }
     gap: 4px;
     position: sticky;
     top: var(--page-pad);
-    height: calc(100vh - 24px);
-    height: calc(100dvh - 24px);
+    overflow-y: auto;
+    /* ارتفاع الشاشة ناقص هامشي الصفحة: مع top الملتصق تقع حافته السفلى
+       على حافة آخر بطاقة في المحتوى تماماً (كانت 24px فينقص 8px) */
+    height: calc(100vh - var(--page-pad) * 2);
+    height: calc(100dvh - var(--page-pad) * 2);
 }
 
+/* الشعار مدمج مع خلفية الشريط البرتقالية: بلا مربع أبيض ولا ظل */
 .rail-logo {
-    width: 44px;
-    height: 44px;
-    border-radius: 13px;
-    background: #ffffff;
+    width: 52px;
+    height: 52px;
+    background: none;
+    box-shadow: none;
     display: grid;
     place-items: center;
     margin-bottom: 18px;
     flex-shrink: 0;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
 }
 
-.rail-logo svg { width: 26px; height: 26px; color: var(--brand); }
+.rail-logo svg { width: 36px; height: 36px; color: #ffffff; stroke-width: 1.6; }
 
 .rail-nav { display: flex; flex-direction: column; gap: 4px; width: 100%; }
 
@@ -197,15 +205,11 @@ a { color: inherit; text-decoration: none; }
 .main {
     flex: 1;
     min-width: 0;
-    /* الجهة الملاصقة للشريط الجانبي بلا حشو — هامش الشريط نفسه يكفي،
-       والحافة الخارجية تأخذ الهامش حتى لا تلتصق الترويسة بطرف الشاشة */
-    padding: var(--page-pad) 0 var(--page-pad) var(--page-pad);
+    padding: 0;
     display: flex;
     flex-direction: column;
     gap: var(--grid-gap);
 }
-
-body.is-ltr .main { padding: var(--page-pad) var(--page-pad) var(--page-pad) 0; }
 
 .topbar {
     background: linear-gradient(135deg, var(--brand), #d8521c);
@@ -291,8 +295,13 @@ body.is-ltr .main { padding: var(--page-pad) var(--page-pad) var(--page-pad) 0; 
 .btn-sm { height: 32px; padding: 0 12px; font-size: 12px; border-radius: 9px; }
 
 /* ---------- 5. اللوحات ---------- */
-.view { display: none; flex-direction: column; gap: 14px; padding-bottom: 20px; }
-.view.active { display: flex; }
+.view { display: none; flex-direction: column; gap: var(--grid-gap); }
+
+/* القسم الظاهر يملأ ارتفاع الصفحة، وآخر بطاقة فيه تتمدد على ما تبقّى،
+   فلا يبقى فراغ أسفل المحتوى وتتطابق حافته السفلى مع الشريط الجانبي.
+   shrink = 0 يمنع انكماش المحتوى الطويل عن حجمه الطبيعي. */
+.view.active { display: flex; flex: 1 0 auto; }
+.view.active > :last-child { flex: 1 0 auto; }
 
 .card {
     background: var(--surface);
@@ -765,8 +774,8 @@ select.input { cursor: pointer; }
     .rail-btn svg { width: 17px; height: 17px; }
     .rail-badge { inset-inline-end: 4px; top: 2px; }
 
+    .app { padding: 0; gap: 0; }
     .main { padding: 8px 8px calc(96px + env(safe-area-inset-bottom, 0px)); }
-    body.is-ltr .main { padding: 8px 8px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .topbar { padding: 10px 12px; }
     .topbar-title h1 { font-size: 16.5px; }
     .card { --card-pad: 12px; }

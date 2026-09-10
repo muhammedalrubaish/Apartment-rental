@@ -227,7 +227,7 @@
     /* عمولة حجز كامل */
     function bookingFee(total, nights, source) {
         if (!nights || total <= 0) return 0;
-        return Math.round(platformFee(total / nights, source) * nights);
+        return round2(platformFee(total / nights, source) * nights);
     }
 
     /* العمولة المتوقعة لحجز بإعدادات منصته — اقتراح فقط.
@@ -241,9 +241,18 @@
     /* بنود المصاريف المعتمدة */
     const EXPENSE_CATEGORIES = ['تنظيف', 'كهرباء', 'إنترنت', 'عمولة منصات'];
 
+    /* تقريب لأقرب هللة — يمنع تراكم أخطاء الفاصلة العائمة (0.1+0.2) */
+    function round2(n) {
+        return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+    }
+
+    /* عرض المبلغ بالهللات عند وجودها، وبلا كسور صفرية حين يكون صحيحاً */
     function money(n) {
         const cur = CURRENCIES[state.settings.currency] || 'ر.س';
-        const v = Math.round(Number(n) || 0).toLocaleString(state.settings.lang === 'ar' ? 'ar-EG' : 'en-US');
+        const v = round2(n).toLocaleString(state.settings.lang === 'ar' ? 'ar-EG' : 'en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+        });
         return `${v} ${cur}`;
     }
 
@@ -476,7 +485,7 @@
             expenses: expTotal,
             net: revenue - expTotal,
             count: bookings.length,
-            adr: nights ? Math.round(gross / nights) : 0,
+            adr: nights ? round2(gross / nights) : 0,
             margin: gross ? Math.round(((revenue - expTotal) / gross) * 100) : 0,
             bookings,
         };
@@ -527,7 +536,7 @@
             growth: prevRev ? Math.round(((rev - prevRev) / prevRev) * 100) : 0,
             occupancy: occupancyRate(30),
             nights,
-            adr: nights ? Math.round(gross / nights) : 0,
+            adr: nights ? round2(gross / nights) : 0,
             dueBills: state.expenses.filter((e) => e.status === 'due').reduce((s, e) => s + Number(e.amount || 0), 0),
             dueCount: state.expenses.filter((e) => e.status === 'due').length,
             upcoming: realBookings().filter((b) => b.checkin >= todayISO()).length,
@@ -948,14 +957,14 @@
                 value: money(actualPower || r.power),
                 note: actualPower
                     ? 'فعلي هذا الشهر — يتغيّر حسب الإشغال'
-                    : `تقديري — يتغيّر حسب الإشغال (متوسط ${Math.round(Number(r.power) || 0)})`,
+                    : `تقديري — يتغيّر حسب الإشغال (متوسط ${round2(r.power)})`,
             },
             {
                 icon: '📶', label: 'الإنترنت',
                 value: money(actualInternet || internetShare()),
                 note: actualInternet
                     ? `فعلي هذا الشهر • حصتي من ${shares} مشاركين`
-                    : `حصتي = ${Math.round(Number(r.internetTotal) || 0)} ÷ ${shares} مشاركين`,
+                    : `حصتي = ${round2(r.internetTotal)} ÷ ${shares} مشاركين`,
             },
             { icon: '🧾', label: 'عمولة المنصات', value: money(monthCommission(y, m)), note: 'محجوزة من إجمالي حجوزات هذا الشهر' },
             { icon: '🔑', label: 'الوحدات النشطة', value: state.properties.filter((p) => p.status === 'active').length, note: 'من أصل ' + state.properties.length },
@@ -1340,12 +1349,49 @@
         return (code === '42703' || code === 'PGRST204') && msg.indexOf('commission') !== -1;
     }
 
-    let commissionColumnWarned = false;
+    let commissionColumnMissing = false;
 
+    /* العمود ناقص = العمولة لا تُحفظ أبداً. لا يكفي تنبيه عابر يمرّ دون أن
+       يراه المالك، فنعرض شريط تحذير ثابتاً يحمل جملة SQL المطلوبة. */
     function warnCommissionColumn() {
-        if (commissionColumnWarned) return;
-        commissionColumnWarned = true;
-        toast('حُفظ الحجز دون العمولة — نفّذ ملف الهجرة 0004 في Supabase', true);
+        commissionColumnMissing = true;
+        toast('لم تُحفظ العمولة — عمود commission غير موجود في قاعدة البيانات', true);
+        renderCommissionWarning();
+    }
+
+    const COMMISSION_SQL = 'alter table public.bookings add column if not exists commission numeric not null default 0;';
+
+    function renderCommissionWarning() {
+        if (!commissionColumnMissing) return;
+        if (document.getElementById('commission-warning')) return;
+
+        const main = document.querySelector('.main');
+        const topbar = document.querySelector('.topbar');
+        if (!main || !topbar) return;
+
+        const box = document.createElement('div');
+        box.className = 'card';
+        box.id = 'commission-warning';
+        box.style.cssText = 'border-color:var(--danger);background:var(--danger-soft, var(--surface))';
+        box.innerHTML = `
+            <div class="card-head"><h2 style="color:var(--danger)">⚠️ عمولة المنصة لا تُحفظ</h2></div>
+            <p style="font-size:12.5px;line-height:1.9;margin-bottom:10px">
+                جدول الحجوزات في قاعدة البيانات ينقصه عمود <b>commission</b>، فكل عمولة تُدخلها
+                تُهمل عند الحفظ. نفّذ هذه الجملة مرة واحدة في
+                <b>Supabase ← SQL Editor</b> ثم أعد تحميل الصفحة.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <code style="flex:1;min-width:260px;background:var(--surface-2);padding:9px 11px;border-radius:8px;font-size:11.5px;direction:ltr;text-align:left;overflow-x:auto;white-space:nowrap">${escapeHtml(COMMISSION_SQL)}</code>
+                <button class="btn btn-primary btn-sm" id="btn-copy-commission-sql">نسخ الجملة</button>
+            </div>`;
+
+        topbar.insertAdjacentElement('afterend', box);
+
+        document.getElementById('btn-copy-commission-sql').addEventListener('click', () => {
+            navigator.clipboard.writeText(COMMISSION_SQL)
+                .then(() => toast('نُسخت الجملة — ألصقها في SQL Editor'))
+                .catch(() => toast('تعذّر النسخ — حدّد الجملة وانسخها يدوياً', true));
+        });
     }
 
     async function loadBookings() {
@@ -1358,6 +1404,12 @@
             .order('checkin', { ascending: true });
 
         if (error) { reportLoadError('bookings', 'تعذّر تحميل الحجوزات', error); return; }
+
+        // كشف مبكر: صف بلا خاصية commission يعني أن الهجرة 0004 لم تُطبَّق
+        if (data && data.length && !Object.prototype.hasOwnProperty.call(data[0], 'commission')) {
+            commissionColumnMissing = true;
+            renderCommissionWarning();
+        }
 
         state.bookings = (data || []).map(bookingFromRow);
         save();
@@ -2020,7 +2072,7 @@
 
         const changes = bookings
             .map((b) => ({ b, expected: bookingCommission(b), current: bookingCommissionAmount(b) }))
-            .filter((x) => Math.round(x.expected) !== Math.round(x.current));
+            .filter((x) => round2(x.expected) !== round2(x.current));
 
         if (!changes.length) {
             toast('العمولات مطابقة للإعدادات الحالية — لا تغيير');
@@ -2032,7 +2084,7 @@
         const ok = confirm(
             `إعادة حساب عمولات ${changes.length} حجز بإعدادات المنصات الحالية؟
 `
-            + `فرق العمولات ${sign}${Math.round(diff)} ر.س — سيتغيّر الإيراد الواصل بالمقابل.`
+            + `فرق العمولات ${sign}${round2(diff)} ر.س — سيتغيّر الإيراد الواصل بالمقابل.`
         );
         if (!ok) return;
 
@@ -2054,7 +2106,7 @@
         save();
         renderView(currentView());
 
-        if (updated) toast(`أُعيد حساب عمولة ${updated} حجز — فرق ${sign}${Math.round(diff)} ر.س`);
+        if (updated) toast(`أُعيد حساب عمولة ${updated} حجز — فرق ${sign}${round2(diff)} ر.س`);
         if (failed) toast(`تعذّر تحديث ${failed} حجز — تحقق من تنفيذ هجرة 0004`, true);
     }
 
@@ -2277,7 +2329,7 @@
 
         zone.innerHTML = FEE_PLATFORMS.map((p) => {
             const f = feeConf(p);
-            const per = Math.round(platformFee(sample, p));
+            const per = round2(platformFee(sample, p));
             return `<div class="switch" style="flex-wrap:wrap;gap:8px">
                 <div class="switch-info" style="min-width:130px">
                     <h4>${SOURCE_LABEL[p] || p}</h4>
@@ -2460,7 +2512,7 @@
             if (n > 0 && !$('#f-total').value) $('#f-total').value = n * nightly;
 
             const total = Number($('#f-total').value) || 0;
-            const fee = Math.max(0, Number($('#f-fee').value) || 0);
+            const fee = round2(Math.max(0, Number($('#f-fee').value) || 0));
             $('#f-netview').value = money(total - fee);
 
             if (n <= 0) {
@@ -2513,7 +2565,7 @@
             saveBtn.disabled = true;
 
             const total = Number($('#f-total').value) || 0;
-            const fee = Math.max(0, Number($('#f-fee').value) || 0);
+            const fee = round2(Math.max(0, Number($('#f-fee').value) || 0));
             if (fee > total) return toast('العمولة أكبر من المبلغ الإجمالي', true);
 
             const payload = {
@@ -3078,7 +3130,9 @@
             const f = RATE_FIELDS[id];
             el.addEventListener('change', () => {
                 if (!state.rates) state.rates = Object.assign({}, DEFAULT_RATES);
-                const v = Math.max(f.min, Math.round(Number(el.value) || 0));
+                // عدد المشاركين صحيح دائماً، وبقية المبالغ تقبل الهللات
+                const raw = Math.max(f.min, Number(el.value) || 0);
+                const v = f.key === 'internetShares' ? Math.round(raw) : round2(raw);
                 state.rates[f.key] = v;
                 el.value = v;
                 save();
