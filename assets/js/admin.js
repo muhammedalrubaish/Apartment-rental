@@ -585,15 +585,24 @@
     function renderDashboard() {
         const s = stats();
 
+        // حصيلة السنة الميلادية الجارية — بالمعادلة نفسها: الإجمالي ناقص العمولة
+        const yr = new Date().getFullYear();
+        const year = rangeStats(`${yr}-01-01`, `${yr}-12-31`);
+
         const kpis = [
             { label: 'إيرادات الشهر', value: money(s.revenue), icon: '💰', color: 'var(--ok)', soft: 'var(--ok-soft)',
               foot: s.commission
                   ? `إجمالي ${money(s.gross)} − عمولة ${money(s.commission)}`
                   : `<span class="kpi-trend ${s.growth >= 0 ? 'up' : 'down'}">${s.growth >= 0 ? '▲' : '▼'} ${Math.abs(s.growth)}%</span> مقارنة بالشهر الماضي` },
+            { label: `إيرادات السنة ${yr}`, value: money(year.revenue), icon: '📅', color: 'var(--ok)', soft: 'var(--ok-soft)',
+              foot: year.fees
+                  ? `إجمالي ${money(year.gross)} − عمولة ${money(year.fees)}`
+                  : `${year.count} حجز • ${year.nights} ليلة منذ يناير` },
             { label: 'المصاريف التشغيلية', value: money(s.expenses), icon: '🧾', color: 'var(--brand)', soft: 'var(--brand-soft)',
-              foot: `${s.dueCount} فاتورة غير مسددة بقيمة ${money(s.dueBills)}` },
-            { label: 'صافي الربح', value: money(s.net), icon: '📈', color: 'var(--info)', soft: 'var(--info-soft)',
-              foot: `هامش ${s.revenue ? Math.round((s.net / s.revenue) * 100) : 0}% من الإيراد` },
+              foot: `هذا الشهر • ${s.dueCount} فاتورة غير مسددة بقيمة ${money(s.dueBills)}` },
+            // صافي الربح على مستوى السنة لا الشهر — الصورة الأشمل لأداء الوحدة
+            { label: `صافي ربح السنة ${yr}`, value: money(year.net), icon: '📈', color: 'var(--info)', soft: 'var(--info-soft)',
+              foot: `الواصل ${money(year.revenue)} − مصاريف ${money(year.expenses)} • هامش ${year.margin}%` },
             { label: 'نسبة الإشغال', value: s.occupancy + '<small>%</small>', icon: '🏠', color: 'var(--warn)', soft: 'var(--warn-soft)',
               foot: `${s.nights} ليلة مؤجَّرة • ${s.upcoming} حجز قادم` },
         ];
