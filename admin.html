@@ -306,6 +306,7 @@
                         <button data-cf="ops">التشغيل</button>
                     </div>
                     <input class="input" id="contact-search" placeholder="بحث بالاسم أو الجوال…" style="max-width:220px;height:34px">
+                    <button class="btn btn-ghost btn-sm" id="btn-seed-ops" hidden>+ جهات التشغيل الأساسية</button>
                     <button class="btn btn-primary btn-sm" id="btn-add-contact">+ جهة اتصال</button>
                 </div>
                 <div class="table-wrap">
@@ -403,7 +404,7 @@
                     </div>
 
                     <div class="switch">
-                        <div class="switch-info"><h4>عدد المشاركين في الإنترنت</h4><p>يتغيّر بانسحاب أو انضمام أحدهم</p></div>
+                        <div class="switch-info"><h4>عدد المشاركين في الإنترنت</h4><p id="rate-hosts-hint">يتغيّر بانسحاب أو انضمام أحدهم</p></div>
                         <input type="number" class="input" id="rate-internet-shares" min="1" step="1" style="max-width:110px">
                     </div>
 

@@ -574,20 +574,32 @@
         direct: 'الموقع المباشر', gathern: 'جاذر إن', airbnb: 'Airbnb', ical: 'مزامنة iCal',
         block: 'حجب', manual: 'إضافة يدوية', site_chat: 'محادثة الموقع',
         // أدوار تشغيلية — جهات اتصال إدارة الإشغال لا زبائن
-        cleaning_lead: 'مسؤول النظافة', cleaning_staff: 'موظف نظافة',
-        building_office: 'مكتب العمارة', building_worker: 'عامل المبنى', host: 'مضيف بالعمارة',
+        cleaning_lead: 'مسؤول النظافة', cleaning_staff: 'موظف نظافة', cleaning_company: 'شركة النظافة',
+        building_office: 'مكتب العمارة', building_worker: 'مسؤول المبنى', host: 'مضيف بالعمارة',
     };
 
     /* جهات الاتصال التشغيلية — أدوار إدارة الإشغال والصيانة داخل العمارة */
-    const OPS_SOURCES = ['cleaning_lead', 'cleaning_staff', 'building_office', 'building_worker', 'host'];
+    const OPS_SOURCES = ['cleaning_lead', 'cleaning_staff', 'cleaning_company', 'building_office', 'building_worker', 'host'];
     const OPS_ICON = {
-        cleaning_lead: '🧹', cleaning_staff: '🧽',
+        cleaning_lead: '🧹', cleaning_staff: '🧽', cleaning_company: '🏬',
         building_office: '🏢', building_worker: '🛠️', host: '🤝',
     };
 
     function isOpsContact(c) {
         return OPS_SOURCES.indexOf(c.source) !== -1;
     }
+
+    /* جهات الاتصال التشغيلية المعروفة — تُدخل بضغطة واحدة من صفحة جهات الاتصال.
+       المضيفون الثلاثة + المالك = ٤ مشاركين في فاتورة الإنترنت (٢١٠ ÷ ٤). */
+    const OPS_SEED = [
+        { name: 'شركة ديار رؤي العقارية', phone: '0535397764', source: 'building_office', note: 'مكتب إدارة العمارة' },
+        { name: 'إقبال حسين', phone: '0578068823', source: 'building_worker', note: 'مسؤول المبنى' },
+        { name: 'بسمتك', phone: '0536461956', source: 'cleaning_lead', note: 'مسؤول النظافة' },
+        { name: 'مدير شركة النظافة', phone: '0545777919', source: 'cleaning_company', note: 'إدارة شركة النظافة' },
+        { name: 'عبدالرحمن السلطان', phone: '', source: 'host', note: 'شقة A4 — مشارك في فاتورة الإنترنت' },
+        { name: 'عايض الشمري', phone: '', source: 'host', note: 'شقة A1 وشقة B28 في مبنى B — مشارك في فاتورة الإنترنت' },
+        { name: 'عبدالمجيد', phone: '0567559595', source: 'host', note: 'شقة A7 — مشارك في فاتورة الإنترنت' },
+    ];
 
     const STATUS_TAG = {
         confirmed: ['tag-ok', 'مؤكد'],
@@ -1566,6 +1578,37 @@
     /* ---------------------------------------------------------------------
        10. جهات الاتصال
        --------------------------------------------------------------------- */
+    /* إدخال جهات الاتصال التشغيلية المعروفة — يتجاهل الموجود مسبقاً فلا يُكرّر شيئاً.
+       المطابقة بالجوال إن وُجد، وإلا بالاسم (المضيفون دون أرقام). */
+    async function seedOpsContacts(btn) {
+        const missing = OPS_SEED.filter((s) => !state.contacts.some((c) => (
+            s.phone ? c.phone === s.phone : c.name === s.name
+        )));
+
+        if (!missing.length) {
+            toast('جهات الاتصال التشغيلية مُدخلة مسبقاً');
+            return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = 'جارٍ الإضافة…'; }
+
+        let added = 0;
+        let failed = 0;
+        for (const s of missing) {
+            const saved = await createContact(Object.assign({ email: '' }, s));
+            if (saved) { state.contacts.push(saved); added++; } else { failed++; }
+        }
+
+        if (btn) { btn.disabled = false; btn.textContent = '+ جهات التشغيل الأساسية'; }
+
+        save();
+        renderContacts();
+
+        if (added) toast(`تمت إضافة ${added} جهة اتصال تشغيلية`);
+        // الفشل الصامت الأشهر: قيد تفرّد الجوال يرفض جهتين بلا رقم — انظر هجرة 0003
+        if (failed) toast(`تعذّر إضافة ${failed} جهة — راجع أرقام الجوال المكرّرة`, true);
+    }
+
     /* رقم واتساب دولي من رقم محلي */
     function waNumber(phone) {
         return (phone || '').replace(/^0/, '966').replace(/\D/g, '');
@@ -1582,6 +1625,13 @@
         const opsCount = state.contacts.filter(isOpsContact).length;
         $('#contact-count').textContent = `${state.contacts.length - opsCount} زبون • ${opsCount} جهة تشغيل`;
         $$('#contact-filter button').forEach((b) => b.classList.toggle('active', b.dataset.cf === contactFilter));
+
+        // زر الإدخال السريع يظهر في وضع التشغيل فقط، وما دامت جهة واحدة على الأقل ناقصة
+        const seedBtn = $('#btn-seed-ops');
+        const seedMissing = OPS_SEED.some((s) => !state.contacts.some((c) => (
+            s.phone ? c.phone === s.phone : c.name === s.name
+        )));
+        seedBtn.hidden = !(opsMode && seedMissing);
 
         // جدول التشغيل لا يعرض أعمدة الحجوزات والإنفاق — فهي بلا معنى لمسؤول نظافة أو عامل مبنى
         $('#thead-contacts').innerHTML = opsMode
@@ -1742,6 +1792,15 @@
         $('#rate-power').value = Number(r.power) || 0;
         $('#rate-cleaning').value = Number(r.cleaning) || 0;
         $('#rate-internet-share').textContent = money(internetShare());
+
+        // تلميح مقارنة: المضيفون المسجّلون في جهات الاتصال + المالك مقابل الرقم المُدخل
+        const hosts = state.contacts.filter((c) => c.source === 'host').length;
+        const hint = $('#rate-hosts-hint');
+        if (hint) {
+            hint.textContent = hosts
+                ? `المضيفون المسجّلون ${hosts} + أنت = ${hosts + 1} — عدّله عند انسحاب أحدهم`
+                : 'يتغيّر بانسحاب أو انضمام أحدهم';
+        }
     }
 
     function applyTheme() {
@@ -2251,6 +2310,8 @@
                 renderContacts();
             });
         });
+
+        $('#btn-seed-ops').addEventListener('click', (e) => seedOpsContacts(e.currentTarget));
 
         // التقويم
         $('#cal-prev').addEventListener('click', () => { calCursor.setMonth(calCursor.getMonth() - 1); renderCalendar(); });
