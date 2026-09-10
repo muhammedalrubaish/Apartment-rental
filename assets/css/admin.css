@@ -197,13 +197,15 @@ a { color: inherit; text-decoration: none; }
 .main {
     flex: 1;
     min-width: 0;
-    padding: var(--page-pad) var(--page-pad) var(--page-pad) 0;
+    /* الجهة الملاصقة للشريط الجانبي بلا حشو — هامش الشريط نفسه يكفي،
+       والحافة الخارجية تأخذ الهامش حتى لا تلتصق الترويسة بطرف الشاشة */
+    padding: var(--page-pad) 0 var(--page-pad) var(--page-pad);
     display: flex;
     flex-direction: column;
     gap: var(--grid-gap);
 }
 
-body.is-ltr .main { padding: var(--page-pad) 0 var(--page-pad) var(--page-pad); }
+body.is-ltr .main { padding: var(--page-pad) var(--page-pad) var(--page-pad) 0; }
 
 .topbar {
     background: linear-gradient(135deg, var(--brand), #d8521c);
@@ -507,6 +509,19 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 
 .cal-pill.ext { background: var(--info); }
 .cal-pill.block { background: var(--muted); }
+/* شاشة التقويم منقسمة: التقويم أعرض وحجوزات الشهر بجانبه، وتنطبق على عمود
+   واحد في الشاشات الضيقة. align-items: start يمنع تمدد البطاقة الأقصر */
+.cal-split { grid-template-columns: minmax(0, 1fr); }
+
+@media (min-width: 1024px) {
+    .cal-split {
+        grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+        align-items: start;
+    }
+    /* قائمة حجوزات الشهر لا تتجاوز ارتفاع التقويم إلا بتمرير داخلي */
+    #cal-month-list { max-height: 430px; overflow-y: auto; }
+}
+
 .cal-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-dim); font-weight: 600; margin-top: 12px; }
 .cal-legend i { width: 12px; height: 12px; border-radius: 4px; display: inline-block; margin-inline-end: 5px; vertical-align: -2px; }
 

@@ -240,6 +240,8 @@
 
         <!-- ============ 2) التقويم ============ -->
         <section class="view" id="view-calendar">
+            <!-- شاشة منقسمة: التقويم يأخذ المساحة الأكبر وحجوزات الشهر بجانبه -->
+            <div class="grid cal-split">
             <div class="card">
                 <div class="cal-head">
                     <button class="icon-btn" id="cal-prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
@@ -270,20 +272,20 @@
                 </div>
             </div>
 
-            <div class="grid grid-2">
-                <div class="card">
-                    <div class="card-head"><h2>روابط المزامنة (iCal)</h2><span class="sub">اربط جاذر إن و Airbnb</span></div>
-                    <p style="font-size:12.5px;color:var(--text-dim);line-height:1.8;margin-bottom:12px">
-                        انسخ رابط التصدير وألصقه في «تقويم المزامنة» بمنصة الحجز، والعكس: ألصق رابط المنصة هنا ليُقرأ تلقائياً عند كل تحديث.
-                    </p>
-                    <div id="sync-list"></div>
-                    <button class="btn btn-ghost btn-sm" id="btn-add-sync" style="margin-top:12px">+ إضافة رابط منصة</button>
-                </div>
-
                 <div class="card">
                     <div class="card-head"><h2>حجوزات الشهر</h2><span class="sub" id="cal-month-count"></span></div>
                     <div id="cal-month-list"></div>
                 </div>
+            </div>
+
+            <!-- روابط المزامنة أسفل القسمين بعرض الصفحة كاملاً -->
+            <div class="card">
+                <div class="card-head"><h2>روابط المزامنة (iCal)</h2><span class="sub">اربط جاذر إن و Airbnb</span></div>
+                <p style="font-size:12.5px;color:var(--text-dim);line-height:1.8;margin-bottom:12px">
+                    انسخ رابط التصدير وألصقه في «تقويم المزامنة» بمنصة الحجز، والعكس: ألصق رابط المنصة هنا ليُقرأ تلقائياً عند كل تحديث.
+                </p>
+                <div id="sync-list"></div>
+                <button class="btn btn-ghost btn-sm" id="btn-add-sync" style="margin-top:12px">+ إضافة رابط منصة</button>
             </div>
         </section>
 
