@@ -175,16 +175,33 @@
 
     const CURRENCIES = { SAR: 'ر.س', USD: '$', AED: 'د.إ' };
 
-    /* ثوابت التشغيل — منقولة من لوحة تحصيل الديون (collection.html) */
+    /* ثوابت التشغيل — منقولة من لوحة تحصيل الديون (collection.html)
+       ملاحظة: النظافة والكهرباء والإنترنت لم تبقَ ثوابت — أصبحت تقديرات قابلة للتعديل
+       في state.rates (انظر DEFAULT_RATES أدناه)، والقيمة الفعلية تُقرأ من جدول المصاريف. */
     const RATES = {
         nightly: 294,        // سعر الليلة
-        cleaning: 500,       // النظافة شهرياً
-        power: 130,          // الكهرباء شهرياً
-        internet: 70,        // الإنترنت — حصتي شهرياً
         feeBase: 14.38,      // ثابت عمولة المنصات
         feeRate: 0.0692,     // نسبة عمولة المنصات
         feeCap: 50,          // الحد الأقصى للعمولة عن الليلة
     };
+
+    /* تقديرات المصاريف المتغيّرة — تُستخدم فقط حين لا يوجد مصروف مسجَّل للشهر الحالي.
+       - الإنترنت: إجمالي الفاتورة ÷ عدد المشاركين (يتغيّر بانسحاب أو انضمام أحدهم).
+       - الكهرباء: يتغيّر حسب الإشغال، فالرقم هنا تقدير متوسط فقط.
+       - النظافة: يتغيّر حسب عدد الزيارات (أول شهر أقل عادةً). */
+    const DEFAULT_RATES = {
+        cleaning: 500,          // تقدير النظافة شهرياً
+        power: 130,             // تقدير الكهرباء شهرياً
+        internetTotal: 210,     // إجمالي فاتورة الإنترنت للمجموعة
+        internetShares: 4,      // عدد المشاركين في الفاتورة
+    };
+
+    /* حصتي من الإنترنت = الإجمالي ÷ عدد المشاركين */
+    function internetShare() {
+        const r = state.rates || DEFAULT_RATES;
+        const shares = Math.max(1, Number(r.internetShares) || 1);
+        return (Number(r.internetTotal) || 0) / shares;
+    }
 
     /* عمولة المنصة عن الليلة الواحدة (نفس معادلة لوحة التحصيل) */
     function platformFee(nightPrice) {
@@ -286,6 +303,7 @@
                 lang: 'ar', theme: 'light', currency: 'SAR', hijri: false,
                 notifBooking: true, notifBills: true, notifMessages: true, notifCheckout: false,
             },
+            rates: Object.assign({}, DEFAULT_RATES),
             syncFeeds: [
                 { id: uid(), name: 'جاذر إن (Gathern)', url: '', lastSync: '' },
                 { id: uid(), name: 'Airbnb', url: '', lastSync: '' },
@@ -300,6 +318,7 @@
     let state = load();
     let calCursor = new Date();
     let notifFilter = 'all';
+    let contactFilter = 'all';   // all | guests | ops
     let chartMonths = 6;
     let billsExpanded = false;
 
@@ -308,7 +327,11 @@
             const raw = localStorage.getItem(STORE_KEY);
             if (raw) {
                 const parsed = JSON.parse(raw);
-                if (parsed && parsed.settings) return parsed;
+                if (parsed && parsed.settings) {
+                    // ترقية النسخ القديمة: أضيفت تقديرات المصاريف المتغيّرة لاحقاً
+                    parsed.rates = Object.assign({}, DEFAULT_RATES, parsed.rates || {});
+                    return parsed;
+                }
             }
         } catch (e) { /* بيانات تالفة — نبدأ من جديد */ }
         return seed();
@@ -343,6 +366,13 @@
     function monthExpenses(y, m) {
         return state.expenses
             .filter((e) => inMonth(e.date, y, m))
+            .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    }
+
+    /* إجمالي بند مصروف واحد في شهر معيّن — الأساس في عرض القيمة الفعلية المتغيّرة */
+    function monthCategoryTotal(category, y, m) {
+        return state.expenses
+            .filter((e) => e.category === category && inMonth(e.date, y, m))
             .reduce((s, e) => s + (Number(e.amount) || 0), 0);
     }
 
@@ -540,7 +570,25 @@
             </div>`).join('');
     }
 
-    const SOURCE_LABEL = { direct: 'الموقع المباشر', gathern: 'جاذر إن', airbnb: 'Airbnb', ical: 'مزامنة iCal', block: 'حجب', manual: 'إضافة يدوية', site_chat: 'محادثة الموقع' };
+    const SOURCE_LABEL = {
+        direct: 'الموقع المباشر', gathern: 'جاذر إن', airbnb: 'Airbnb', ical: 'مزامنة iCal',
+        block: 'حجب', manual: 'إضافة يدوية', site_chat: 'محادثة الموقع',
+        // أدوار تشغيلية — جهات اتصال إدارة الإشغال لا زبائن
+        cleaning_lead: 'مسؤول النظافة', cleaning_staff: 'موظف نظافة',
+        building_office: 'مكتب العمارة', building_worker: 'عامل المبنى', host: 'مضيف بالعمارة',
+    };
+
+    /* جهات الاتصال التشغيلية — أدوار إدارة الإشغال والصيانة داخل العمارة */
+    const OPS_SOURCES = ['cleaning_lead', 'cleaning_staff', 'building_office', 'building_worker', 'host'];
+    const OPS_ICON = {
+        cleaning_lead: '🧹', cleaning_staff: '🧽',
+        building_office: '🏢', building_worker: '🛠️', host: '🤝',
+    };
+
+    function isOpsContact(c) {
+        return OPS_SOURCES.indexOf(c.source) !== -1;
+    }
+
     const STATUS_TAG = {
         confirmed: ['tag-ok', 'مؤكد'],
         pending: ['tag-warn', 'بانتظار التأكيد'],
@@ -643,14 +691,46 @@
 
     function renderOps(s) {
         const cleaningDue = realBookings().filter((b) => b.checkout >= todayISO()).length;
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = now.getMonth();
+        const r = state.rates || DEFAULT_RATES;
+
+        /* البنود المتغيّرة: القيمة الفعلية المسجَّلة لهذا الشهر تسبق التقدير دائماً.
+           فإن لم تُسجَّل فاتورة الشهر بعد نعرض التقدير موسوماً بأنه تقديري. */
+        const actualCleaning = monthCategoryTotal('تنظيف', y, m);
+        const actualPower = monthCategoryTotal('كهرباء', y, m);
+        const actualInternet = monthCategoryTotal('إنترنت', y, m);
+        const shares = Math.max(1, Number(r.internetShares) || 1);
+
         const items = [
             { icon: '🛏️', label: 'متوسط سعر الليلة', value: money(s.adr), note: 'محسوب من حجوزات الشهر' },
-            { icon: '🧹', label: 'النظافة', value: money(RATES.cleaning), note: `شهرياً • ${cleaningDue} زيارة قادمة` },
-            { icon: '⚡', label: 'الكهرباء', value: money(RATES.power), note: 'ثابت شهرياً' },
-            { icon: '📶', label: 'الإنترنت', value: money(RATES.internet), note: 'حصتي من الاشتراك شهرياً' },
+            {
+                icon: '🧹', label: 'النظافة',
+                value: money(actualCleaning || r.cleaning),
+                note: actualCleaning
+                    ? `فعلي هذا الشهر • ${cleaningDue} زيارة قادمة`
+                    : `تقديري — لم تُسجَّل بعد • ${cleaningDue} زيارة قادمة`,
+            },
+            {
+                icon: '⚡', label: 'الكهرباء',
+                value: money(actualPower || r.power),
+                note: actualPower
+                    ? 'فعلي هذا الشهر — يتغيّر حسب الإشغال'
+                    : `تقديري — يتغيّر حسب الإشغال (متوسط ${Math.round(Number(r.power) || 0)})`,
+            },
+            {
+                icon: '📶', label: 'الإنترنت',
+                value: money(actualInternet || internetShare()),
+                note: actualInternet
+                    ? `فعلي هذا الشهر • حصتي من ${shares} مشاركين`
+                    : `حصتي = ${Math.round(Number(r.internetTotal) || 0)} ÷ ${shares} مشاركين`,
+            },
             { icon: '🧾', label: 'عمولة المنصات', value: money(state.expenses.filter((e) => e.category === 'عمولة منصات').reduce((a, e) => a + Number(e.amount || 0), 0)), note: `${RATES.feeBase} + ${(RATES.feeRate * 100).toFixed(2)}% لكل ليلة (بحد ${RATES.feeCap})` },
             { icon: '🔑', label: 'الوحدات النشطة', value: state.properties.filter((p) => p.status === 'active').length, note: 'من أصل ' + state.properties.length },
-            { icon: '👥', label: 'إجمالي الزبائن', value: state.contacts.length, note: 'من الموقع والمنصات' },
+            // الزبائن فقط — جهات الاتصال التشغيلية (نظافة، مكتب العمارة، مضيفون) لا تُحسب زبائن
+            { icon: '👥', label: 'إجمالي الزبائن', value: state.contacts.filter((c) => !isOpsContact(c)).length, note: 'من الموقع والمنصات' },
+            { icon: '🧹', label: 'جهات الاتصال التشغيلية', value: state.contacts.filter(isOpsContact).length, note: 'نظافة • مكتب العمارة • عامل • مضيفون' },
         ];
 
         $('#ops-zone').innerHTML = items.map((i) => `
@@ -1486,34 +1566,71 @@
     /* ---------------------------------------------------------------------
        10. جهات الاتصال
        --------------------------------------------------------------------- */
+    /* رقم واتساب دولي من رقم محلي */
+    function waNumber(phone) {
+        return (phone || '').replace(/^0/, '966').replace(/\D/g, '');
+    }
+
     function renderContacts() {
         const q = ($('#contact-search').value || '').trim();
-        const list = state.contacts.filter((c) => !q || c.name.includes(q) || (c.phone || '').includes(q));
+        const opsMode = contactFilter === 'ops';
 
-        $('#contact-count').textContent = state.contacts.length + ' جهة اتصال';
+        const list = state.contacts
+            .filter((c) => (contactFilter === 'all' ? true : (opsMode ? isOpsContact(c) : !isOpsContact(c))))
+            .filter((c) => !q || c.name.includes(q) || (c.phone || '').includes(q));
+
+        const opsCount = state.contacts.filter(isOpsContact).length;
+        $('#contact-count').textContent = `${state.contacts.length - opsCount} زبون • ${opsCount} جهة تشغيل`;
+        $$('#contact-filter button').forEach((b) => b.classList.toggle('active', b.dataset.cf === contactFilter));
+
+        // جدول التشغيل لا يعرض أعمدة الحجوزات والإنفاق — فهي بلا معنى لمسؤول نظافة أو عامل مبنى
+        $('#thead-contacts').innerHTML = opsMode
+            ? '<tr><th>الاسم</th><th>الدور</th><th>الجوال</th><th>ملاحظات</th><th></th></tr>'
+            : '<tr><th>الاسم</th><th>الجوال</th><th>المصدر</th><th>الحجوزات</th><th>إجمالي الإنفاق</th><th>آخر تواصل</th><th></th></tr>';
 
         if (!list.length) {
-            $('#tbl-contacts').innerHTML = `<tr><td colspan="7">${emptyBox('👥', 'لا نتائج', 'لا توجد جهات اتصال مطابقة')}</td></tr>`;
+            const cols = opsMode ? 5 : 7;
+            const empty = opsMode
+                ? emptyBox('🧹', 'لا جهات تشغيل', 'أضف مسؤول النظافة ومكتب العمارة وعامل المبنى والمضيفين')
+                : emptyBox('👥', 'لا نتائج', 'لا توجد جهات اتصال مطابقة');
+            $('#tbl-contacts').innerHTML = `<tr><td colspan="${cols}">${empty}</td></tr>`;
             return;
         }
 
         $('#tbl-contacts').innerHTML = list.map((c) => {
+            const wa = waNumber(c.phone);
+            const callBtns = `
+                ${wa ? `<a class="btn btn-ghost btn-sm" href="https://wa.me/${wa}" target="_blank" rel="noopener">واتساب</a>` : ''}
+                ${c.phone ? `<a class="btn btn-ghost btn-sm" href="tel:${escapeHtml(c.phone)}">اتصال</a>` : ''}
+                <button class="btn btn-ghost btn-sm" data-edit-contact="${c.id}">تعديل</button>
+                <button class="btn btn-ghost btn-sm" data-del-contact="${c.id}" style="color:var(--danger)">حذف</button>`;
+
+            if (opsMode) {
+                return `<tr>
+                    <td>${OPS_ICON[c.source] || '👤'} ${escapeHtml(c.name)}</td>
+                    <td><span class="tag tag-info">${SOURCE_LABEL[c.source] || c.source}</span></td>
+                    <td class="num dim">${escapeHtml(c.phone || '—')}</td>
+                    <td class="dim">${c.note ? escapeHtml(c.note) : '—'}</td>
+                    <td><div style="display:flex;gap:6px;justify-content:flex-end">${callBtns}</div></td>
+                </tr>`;
+            }
+
             const bk = realBookings().filter((b) => b.phone && b.phone === c.phone);
             const spend = bk.reduce((s, b) => s + Number(b.total || 0), 0);
             const last = bk.map((b) => b.checkin).sort().pop();
-            const wa = (c.phone || '').replace(/^0/, '966').replace(/\D/g, '');
+            const ops = isOpsContact(c);
 
             return `<tr>
-                <td>${escapeHtml(c.name)}${c.note ? `<br><span style="font-size:11px;color:var(--muted);font-weight:500">${escapeHtml(c.note)}</span>` : ''}</td>
+                <td>${ops ? (OPS_ICON[c.source] || '👤') + ' ' : ''}${escapeHtml(c.name)}${c.note ? `<br><span style="font-size:11px;color:var(--muted);font-weight:500">${escapeHtml(c.note)}</span>` : ''}</td>
                 <td class="num dim">${escapeHtml(c.phone || '—')}</td>
-                <td><span class="tag tag-mute">${SOURCE_LABEL[c.source] || c.source}</span></td>
-                <td class="num">${bk.length}</td>
-                <td class="num">${money(spend)}</td>
+                <td><span class="tag ${ops ? 'tag-info' : 'tag-mute'}">${SOURCE_LABEL[c.source] || c.source}</span></td>
+                <td class="num">${ops ? '—' : bk.length}</td>
+                <td class="num">${ops ? '—' : money(spend)}</td>
                 <td class="num dim">${last ? fmtDate(last) : '—'}</td>
                 <td>
                     <div style="display:flex;gap:6px;justify-content:flex-end">
                         ${wa ? `<a class="btn btn-ghost btn-sm" href="https://wa.me/${wa}" target="_blank" rel="noopener">واتساب</a>` : ''}
-                        <button class="btn btn-ghost btn-sm" data-book-contact="${c.id}">حجز</button>
+                        ${ops ? '' : `<button class="btn btn-ghost btn-sm" data-book-contact="${c.id}">حجز</button>`}
                         <button class="btn btn-ghost btn-sm" data-edit-contact="${c.id}">تعديل</button>
                         <button class="btn btn-ghost btn-sm" data-del-contact="${c.id}" style="color:var(--danger)">حذف</button>
                     </div>
@@ -1617,6 +1734,14 @@
         $('#set-hijri').classList.toggle('on', !!state.settings.hijri);
         $('#set-currency').value = state.settings.currency;
         $$('[data-pref]').forEach((t) => t.classList.toggle('on', !!state.settings[t.dataset.pref]));
+
+        // تقديرات المصاريف المتغيّرة
+        const r = state.rates || DEFAULT_RATES;
+        $('#rate-internet-total').value = Number(r.internetTotal) || 0;
+        $('#rate-internet-shares').value = Math.max(1, Number(r.internetShares) || 1);
+        $('#rate-power').value = Number(r.power) || 0;
+        $('#rate-cleaning').value = Number(r.cleaning) || 0;
+        $('#rate-internet-share').textContent = money(internetShare());
     }
 
     function applyTheme() {
@@ -1904,11 +2029,16 @@
             <div class="field"><label>الاسم</label><input class="input" id="c-name" placeholder="الاسم الكامل" value="${escapeHtml(c.name)}"></div>
             <div class="form-row">
                 <div class="field"><label>الجوال</label><input class="input" id="c-phone" placeholder="05xxxxxxxx" value="${escapeHtml(c.phone)}"></div>
-                <div class="field"><label>المصدر</label><select class="input" id="c-source">
-                    <option value="manual"${c.source === 'manual' ? ' selected' : ''}>إضافة يدوية</option>
-                    <option value="direct"${c.source === 'direct' ? ' selected' : ''}>الموقع المباشر</option>
-                    <option value="gathern"${c.source === 'gathern' ? ' selected' : ''}>جاذر إن</option>
-                    <option value="airbnb"${c.source === 'airbnb' ? ' selected' : ''}>Airbnb</option>
+                <div class="field"><label>المصدر أو الدور</label><select class="input" id="c-source">
+                    <optgroup label="الزبائن">
+                        <option value="manual"${c.source === 'manual' ? ' selected' : ''}>إضافة يدوية</option>
+                        <option value="direct"${c.source === 'direct' ? ' selected' : ''}>الموقع المباشر</option>
+                        <option value="gathern"${c.source === 'gathern' ? ' selected' : ''}>جاذر إن</option>
+                        <option value="airbnb"${c.source === 'airbnb' ? ' selected' : ''}>Airbnb</option>
+                    </optgroup>
+                    <optgroup label="التشغيل">
+                        ${OPS_SOURCES.map((s) => `<option value="${s}"${c.source === s ? ' selected' : ''}>${OPS_ICON[s]} ${SOURCE_LABEL[s]}</option>`).join('')}
+                    </optgroup>
                 </select></div>
             </div>
             <div class="field"><label>البريد الإلكتروني</label><input class="input" id="c-email" placeholder="اختياري" value="${escapeHtml(c.email || '')}"></div>
@@ -2115,6 +2245,13 @@
         $('#btn-add-prop').addEventListener('click', () => openPropertyForm(null));
         $('#contact-search').addEventListener('input', renderContacts);
 
+        $$('#contact-filter button').forEach((b) => {
+            b.addEventListener('click', () => {
+                contactFilter = b.dataset.cf;
+                renderContacts();
+            });
+        });
+
         // التقويم
         $('#cal-prev').addEventListener('click', () => { calCursor.setMonth(calCursor.getMonth() - 1); renderCalendar(); });
         $('#cal-next').addEventListener('click', () => { calCursor.setMonth(calCursor.getMonth() + 1); renderCalendar(); });
@@ -2188,6 +2325,30 @@
             save();
             renderView(currentView());
             toast('تم تغيير العملة');
+        });
+
+        // تقديرات المصاريف المتغيّرة — الإنترنت والكهرباء والنظافة
+        const RATE_FIELDS = {
+            'rate-internet-total': { key: 'internetTotal', min: 0, msg: 'تم تحديث إجمالي فاتورة الإنترنت' },
+            'rate-internet-shares': { key: 'internetShares', min: 1, msg: 'تم تحديث عدد المشاركين — أُعيد حساب حصتي' },
+            'rate-power': { key: 'power', min: 0, msg: 'تم تحديث متوسط الكهرباء' },
+            'rate-cleaning': { key: 'cleaning', min: 0, msg: 'تم تحديث متوسط النظافة' },
+        };
+
+        Object.keys(RATE_FIELDS).forEach((id) => {
+            const el = $('#' + id);
+            if (!el) return;
+            const f = RATE_FIELDS[id];
+            el.addEventListener('change', () => {
+                if (!state.rates) state.rates = Object.assign({}, DEFAULT_RATES);
+                const v = Math.max(f.min, Math.round(Number(el.value) || 0));
+                state.rates[f.key] = v;
+                el.value = v;
+                save();
+                renderSettings();
+                if (currentView() === 'dashboard') renderDashboard();
+                toast(f.msg);
+            });
         });
 
         $$('[data-pref]').forEach((t) => {

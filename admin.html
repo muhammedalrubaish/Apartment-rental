@@ -300,12 +300,17 @@
                 <div class="card-head">
                     <h2>جهات الاتصال</h2>
                     <span class="sub" id="contact-count"></span>
+                    <div class="seg" id="contact-filter">
+                        <button data-cf="all" class="active">الكل</button>
+                        <button data-cf="guests">الزبائن</button>
+                        <button data-cf="ops">التشغيل</button>
+                    </div>
                     <input class="input" id="contact-search" placeholder="بحث بالاسم أو الجوال…" style="max-width:220px;height:34px">
                     <button class="btn btn-primary btn-sm" id="btn-add-contact">+ جهة اتصال</button>
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>الاسم</th><th>الجوال</th><th>المصدر</th><th>الحجوزات</th><th>إجمالي الإنفاق</th><th>آخر تواصل</th><th></th></tr></thead>
+                        <thead id="thead-contacts"></thead>
                         <tbody id="tbl-contacts"></tbody>
                     </table>
                 </div>
@@ -385,6 +390,39 @@
             </div>
 
             <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-head"><h2>المصاريف التشغيلية المتغيّرة</h2></div>
+                    <p style="font-size:12.5px;color:var(--text-dim);line-height:1.8;margin-bottom:14px">
+                        هذه تقديرات تُعرض في المؤشرات التشغيلية فقط حين لا توجد فاتورة مسجَّلة للشهر الحالي.
+                        بمجرد تسجيل المصروف الفعلي في «الفواتير والمستحقات» تُعرض القيمة الفعلية تلقائياً.
+                    </p>
+
+                    <div class="switch">
+                        <div class="switch-info"><h4>إجمالي فاتورة الإنترنت</h4><p>كامل قيمة الاشتراك قبل التقسيم</p></div>
+                        <input type="number" class="input" id="rate-internet-total" min="0" step="1" style="max-width:110px">
+                    </div>
+
+                    <div class="switch">
+                        <div class="switch-info"><h4>عدد المشاركين في الإنترنت</h4><p>يتغيّر بانسحاب أو انضمام أحدهم</p></div>
+                        <input type="number" class="input" id="rate-internet-shares" min="1" step="1" style="max-width:110px">
+                    </div>
+
+                    <div class="switch">
+                        <div class="switch-info"><h4>حصتي من الإنترنت</h4><p>محسوبة: الإجمالي ÷ عدد المشاركين</p></div>
+                        <b id="rate-internet-share" style="font-size:15px">—</b>
+                    </div>
+
+                    <div class="switch">
+                        <div class="switch-info"><h4>متوسط الكهرباء شهرياً</h4><p>تقدير فقط — الفاتورة تتغيّر حسب الإشغال</p></div>
+                        <input type="number" class="input" id="rate-power" min="0" step="1" style="max-width:110px">
+                    </div>
+
+                    <div class="switch">
+                        <div class="switch-info"><h4>متوسط النظافة شهرياً</h4><p>يتغيّر حسب عدد الزيارات في الشهر</p></div>
+                        <input type="number" class="input" id="rate-cleaning" min="0" step="1" style="max-width:110px">
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-head"><h2>الربط والتكامل</h2></div>
                     <div class="switch">
