@@ -586,6 +586,7 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 
 /* ---------- 12. الحقول ---------- */
 .field { display: flex; flex-direction: column; gap: 6px; }
+.field[hidden] { display: none; }
 .field label { font-size: 12px; font-weight: 700; color: var(--text-dim); }
 
 .input, select.input, textarea.input {
@@ -708,6 +709,24 @@ select.input { cursor: pointer; }
 .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .modal-foot { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* صف يبقى بعمودين حتى على الجوال — لتقليل عدد الأسطر في النماذج القصيرة */
+.form-row.two { grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-row > .field { min-width: 0; }
+.form-row.two .input { min-width: 0; padding-inline: 8px; }
+
+/* نموذج الحجز المتدرّج: كل خطوة تظهر بعد اكتمال ما قبلها */
+.f-step { display: none; flex-direction: column; gap: 10px; }
+.f-step.on { display: flex; animation: pop 0.2s ease; }
+.f-step.skip { display: none; }
+.f-hint { font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.7; min-height: 1em; }
+.f-hint b { color: var(--text); font-weight: 800; }
+.field label .opt { font-size: 10.5px; font-weight: 600; color: var(--muted); margin-inline-start: 4px; }
+.link-btn {
+    background: none; border: none; padding: 0; margin-inline-start: 6px;
+    color: var(--brand); font-size: 11px; font-weight: 700; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px;
+}
+textarea.input.compact { min-height: 0; height: 50px; }
 
 /* ---------- 16. التنبيه العائم ---------- */
 .toast-zone { position: fixed; bottom: 20px; inset-inline-start: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 120; }
@@ -784,9 +803,23 @@ select.input { cursor: pointer; }
     .topbar-title h1 { font-size: 16.5px; }
     .card { --card-pad: 12px; }
     .form-row { grid-template-columns: 1fr; }
+    /* نافذة أصغر وأكثر تكثيفاً على الجوال */
+    .modal-back { padding: 12px; }
+    .modal { border-radius: 16px; max-height: 84vh; }
+    .modal-head { padding: 12px 14px; }
+    .modal-head h3 { font-size: 15px; }
+    .modal-body { padding: 14px; gap: 10px; }
+    .modal-foot { padding: 10px 14px; }
+    .field { gap: 4px; }
+    .field label { font-size: 11.5px; }
     .cal-grid { --cal-gap: 4px; --cal-pad: 4px; }
     .cal-day { height: 54px; }
     .toast-zone { inset-inline: 12px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 1300; }
+}
+
+/* شاشات اللمس: خط الحقول 16px يمنع iOS من تكبير الصفحة عند الضغط على حقل الكتابة */
+@media (pointer: coarse) {
+    .input, select.input, textarea.input { font-size: 16px; }
 }
 
 @media (max-width: 480px) {

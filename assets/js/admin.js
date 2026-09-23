@@ -806,7 +806,7 @@
     }
 
     const SOURCE_LABEL = {
-        direct: 'الموقع المباشر', gathern: 'جاذر إن', airbnb: 'Airbnb', ical: 'مزامنة iCal',
+        direct: 'الموقع المباشر', whatsapp: 'واتساب', gathern: 'جاذر إن', airbnb: 'Airbnb', ical: 'مزامنة iCal',
         block: 'حجب', manual: 'إضافة يدوية', site_chat: 'محادثة الموقع',
         // أدوار تشغيلية — جهات اتصال إدارة الإشغال لا زبائن
         cleaning_lead: 'مسؤول النظافة', cleaning_staff: 'موظف نظافة', cleaning_company: 'شركة النظافة',
@@ -2640,53 +2640,92 @@
             `<option value="${p.id}"${pre.propertyId === p.id ? ' selected' : ''}>${escapeHtml(p.name)}</option>`
         )).join('');
 
+        /* النموذج مقسَّم إلى خطوات تُفتح تباعاً (Progressive disclosure):
+           ١ المصدر والوحدة ← ٢ الضيف ← ٣ التواريخ ← ٤ المبلغ ← ٥ الملاحظات.
+           كل خطوة تظهر بعد اكتمال ما قبلها، وفي التعديل تظهر كلها دفعة واحدة.
+           عمولة المنصة تظهر فقط لحجوزات جاذر إن وAirbnb. */
+        const sourceOpt = (v, label) => `<option value="${v}"${pre.source === v ? ' selected' : ''}>${label}</option>`;
         openModal(isEdit ? 'تعديل الحجز' : 'حجز جديد', `
-            <div class="field"><label>اسم الضيف</label><input class="input" id="f-guest" value="${escapeHtml(pre.guest || '')}" placeholder="الاسم الكامل"></div>
-            <div class="form-row">
-                <div class="field"><label>الجوال</label><input class="input" id="f-phone" value="${escapeHtml(pre.phone || '')}" placeholder="05xxxxxxxx"></div>
-                <div class="field"><label>الوحدة</label><select class="input" id="f-prop">${props}</select></div>
-            </div>
-            <div class="form-row">
-                <div class="field"><label>تاريخ الوصول</label><input type="date" class="input" id="f-in" value="${pre.checkin || todayISO()}"></div>
-                <div class="field"><label>تاريخ المغادرة</label><input type="date" class="input" id="f-out" value="${pre.checkout || addDays(todayISO(), 1)}"></div>
-            </div>
-            <div class="form-row">
-                <div class="field"><label>المصدر</label><select class="input" id="f-source">
-                    <option value="direct">الموقع المباشر</option>
-                    <option value="gathern">جاذر إن</option>
-                    <option value="airbnb">Airbnb</option>
-                    <option value="manual">إضافة يدوية</option>
-                    <option value="block">حجب / صيانة</option>
-                </select></div>
-                <div class="field"><label>المبلغ الإجمالي</label><input type="number" class="input" id="f-total" placeholder="0" value="${pre.total || ''}"></div>
-            </div>
-            <div class="form-row">
-                <div class="field">
-                    <label>عمولة المنصة (ر.س)</label>
-                    <input type="number" class="input" id="f-fee" min="0" step="0.01" placeholder="0" value="${pre.commission != null && pre.commission !== '' ? pre.commission : ''}">
-                </div>
-                <div class="field">
-                    <label>الإيراد الواصل لي</label>
-                    <input class="input" id="f-netview" disabled value="—" style="font-weight:800">
+            <div class="f-step on" data-step="1">
+                <div class="form-row two">
+                    <div class="field"><label>المصدر</label><select class="input" id="f-source">
+                        ${!pre.source ? '<option value="" disabled selected>اختر المصدر…</option>' : ''}
+                        ${sourceOpt('direct', 'الموقع المباشر')}
+                        ${sourceOpt('whatsapp', 'واتساب')}
+                        ${sourceOpt('gathern', 'جاذر إن')}
+                        ${sourceOpt('airbnb', 'Airbnb')}
+                        ${sourceOpt('manual', 'إضافة يدوية')}
+                        ${sourceOpt('block', 'حجب / صيانة')}
+                        ${pre.source && ['direct', 'whatsapp', 'gathern', 'airbnb', 'manual', 'block'].indexOf(pre.source) === -1
+                            ? sourceOpt(pre.source, SOURCE_LABEL[pre.source] || pre.source) : ''}
+                    </select></div>
+                    <div class="field"><label>الوحدة</label><select class="input" id="f-prop">${props}</select></div>
                 </div>
             </div>
-            <div style="display:flex;gap:8px;align-items:center;margin:-4px 0 12px;flex-wrap:wrap">
-                <button type="button" class="btn btn-ghost btn-sm" id="f-fee-auto">حساب العمولة تلقائياً</button>
-                <span style="font-size:11.5px;color:var(--muted);font-weight:600">المنصة تحجز العمولة من الإجمالي — اتركها صفراً للحجز المباشر</span>
+            <div class="f-step" data-step="2">
+                <div class="form-row two">
+                    <div class="field"><label>اسم الضيف</label><input class="input" id="f-guest" value="${escapeHtml(pre.guest || '')}" placeholder="الاسم الكامل" autocomplete="off"></div>
+                    <div class="field"><label>الجوال</label><input class="input" id="f-phone" type="tel" inputmode="tel" value="${escapeHtml(pre.phone || '')}" placeholder="05xxxxxxxx"></div>
+                </div>
             </div>
-            ${isEdit ? `<div class="field"><label>حالة الحجز</label><select class="input" id="f-status">
-                <option value="confirmed"${pre.status === 'confirmed' ? ' selected' : ''}>مؤكد</option>
-                <option value="pending"${pre.status === 'pending' ? ' selected' : ''}>بانتظار التأكيد</option>
-                <option value="completed"${pre.status === 'completed' ? ' selected' : ''}>منتهٍ</option>
-                <option value="blocked"${pre.status === 'blocked' ? ' selected' : ''}>محجوب</option>
-                <option value="cancelled"${pre.status === 'cancelled' ? ' selected' : ''}>ملغي</option>
-            </select></div>` : ''}
-            <div class="field"><label>ملاحظات</label><textarea class="input" id="f-note" placeholder="طلبات خاصة، وقت الوصول…">${escapeHtml(pre.note || '')}</textarea></div>
-            <div id="f-hint" style="font-size:12px;color:var(--muted);font-weight:600"></div>`,
+            <div class="f-step" data-step="3">
+                <div class="form-row two">
+                    <div class="field"><label>الوصول</label><input type="date" class="input" id="f-in" value="${pre.checkin || todayISO()}"></div>
+                    <div class="field"><label>المغادرة</label><input type="date" class="input" id="f-out" value="${pre.checkout || addDays(todayISO(), 1)}"></div>
+                </div>
+            </div>
+            <div class="f-step" data-step="4">
+                <div class="form-row two">
+                    <div class="field"><label>المبلغ الإجمالي</label><input type="number" inputmode="decimal" class="input" id="f-total" placeholder="0" value="${pre.total || ''}"></div>
+                    <div class="field" id="f-fee-wrap" hidden>
+                        <label>عمولة المنصة <button type="button" class="link-btn" id="f-fee-auto">احسبها تلقائياً</button></label>
+                        <input type="number" inputmode="decimal" class="input" id="f-fee" min="0" step="0.01" placeholder="0" value="${pre.commission != null && pre.commission !== '' ? pre.commission : ''}">
+                    </div>
+                </div>
+                <div id="f-hint" class="f-hint"></div>
+            </div>
+            <div class="f-step" data-step="5">
+                ${isEdit ? `<div class="field"><label>حالة الحجز</label><select class="input" id="f-status">
+                    <option value="confirmed"${pre.status === 'confirmed' ? ' selected' : ''}>مؤكد</option>
+                    <option value="pending"${pre.status === 'pending' ? ' selected' : ''}>بانتظار التأكيد</option>
+                    <option value="completed"${pre.status === 'completed' ? ' selected' : ''}>منتهٍ</option>
+                    <option value="blocked"${pre.status === 'blocked' ? ' selected' : ''}>محجوب</option>
+                    <option value="cancelled"${pre.status === 'cancelled' ? ' selected' : ''}>ملغي</option>
+                </select></div>` : ''}
+                <div class="field"><label>ملاحظات <span class="opt">اختياري</span></label><textarea class="input compact" id="f-note" rows="2" placeholder="طلبات خاصة، وقت الوصول…">${escapeHtml(pre.note || '')}</textarea></div>
+            </div>`,
             `<button class="btn btn-ghost" id="f-cancel">إلغاء</button>
              <button class="btn btn-primary" id="f-save">${isEdit ? 'حفظ التعديل' : 'حفظ الحجز'}</button>`);
 
-        if (pre.source) $('#f-source').value = pre.source;
+        const FEE_SOURCES = ['gathern', 'airbnb'];
+        const isBlock = () => $('#f-source').value === 'block';
+        const hasFee = () => FEE_SOURCES.indexOf($('#f-source').value) !== -1;
+        const stepEl = (n) => $(`.f-step[data-step="${n}"]`);
+        const isOn = (n) => stepEl(n).classList.contains('on');
+
+        /* اكتمال كل خطوة — الخطوات المفتوحة لا تُغلق مجدداً كي لا تقفز الشاشة */
+        const stepDone = {
+            1: () => !!$('#f-source').value,
+            2: () => isBlock() || !!$('#f-guest').value.trim(),
+            3: () => nightsBetween($('#f-in').value, $('#f-out').value) >= 1,
+            4: () => isBlock() || (Number($('#f-total').value) || 0) > 0,
+        };
+
+        const reveal = () => {
+            if (isEdit) {
+                $$('.f-step').forEach((s) => s.classList.add('on'));
+            } else {
+                for (let n = 1; n <= 4; n++) {
+                    if (!isOn(n)) break;
+                    if (stepDone[n]()) stepEl(n + 1).classList.add('on');
+                    else break;
+                }
+            }
+            // الحجب لا مبلغ له ولا عمولة — تُخفى خطوة المبلغ حتى لا تشغل سطراً
+            stepEl(4).classList.toggle('skip', isBlock());
+            $('#f-fee-wrap').hidden = !hasFee();
+            if (!hasFee()) $('#f-fee').value = '';
+        };
 
         /* العمولة يكتبها المالك بالريال. الحساب التلقائي اقتراح فقط بإعدادات المنصة،
            والصافي = الإجمالي − العمولة يُعرض لحظياً قبل الحفظ. */
@@ -2697,17 +2736,21 @@
         );
 
         const recalc = () => {
+            reveal();
             const n = nightsBetween($('#f-in').value, $('#f-out').value);
             const nightly = state.properties.find((p) => p.id === $('#f-prop').value)?.nightly || 0;
             const src = $('#f-source').value;
-            if (n > 0 && !$('#f-total').value) $('#f-total').value = n * nightly;
+            // السعر المقترح يُملأ فقط بعد ظهور خطوة المبلغ حتى لا تُفتح الخطوات كلها دفعة واحدة
+            if (n > 0 && isOn(4) && !isBlock() && !$('#f-total').value) {
+                $('#f-total').value = n * nightly;
+                reveal();   // المبلغ اكتمل بالسعر المقترح → تُفتح خطوة الملاحظات
+            }
 
             const total = Number($('#f-total').value) || 0;
-            const fee = round2(Math.max(0, Number($('#f-fee').value) || 0));
-            $('#f-netview').value = money(total - fee);
+            const fee = hasFee() ? round2(Math.max(0, Number($('#f-fee').value) || 0)) : 0;
 
             if (n <= 0) {
-                $('#f-hint').textContent = 'تاريخ المغادرة يجب أن يكون بعد الوصول';
+                $('#f-hint').innerHTML = '<span style="color:var(--danger)">تاريخ المغادرة يجب أن يكون بعد الوصول</span>';
                 return;
             }
             if (fee > total) {
@@ -2717,12 +2760,17 @@
 
             const sug = suggestedFee();
             const pct = total ? ((fee / total) * 100).toFixed(1) : '0';
-            $('#f-hint').textContent = fee > 0
-                ? `${n} ليالٍ — العمولة ${pct}% من الإجمالي • الصافي ${money(total - fee)}`
-                : `${n} ليالٍ — السعر المقترح ${money(n * nightly)}${sug > 0 ? ` • العمولة المتوقعة لـ${SOURCE_LABEL[src] || src} ${money(sug)}` : ' • بلا عمولة'}`;
+            if (!hasFee()) {
+                $('#f-hint').innerHTML = `${n} ليالٍ • السعر المقترح ${money(n * nightly)} • <b>الواصل لي ${money(total)}</b>`;
+            } else if (fee > 0) {
+                $('#f-hint').innerHTML = `${n} ليالٍ • العمولة ${pct}% • <b>الواصل لي ${money(total - fee)}</b>`;
+            } else {
+                $('#f-hint').innerHTML = `${n} ليالٍ • السعر المقترح ${money(n * nightly)}${sug > 0 ? ` • العمولة المتوقعة ${money(sug)}` : ''}`;
+            }
         };
 
-        ['#f-total', '#f-source', '#f-fee'].forEach((sel) => $(sel).addEventListener('input', recalc));
+        ['#f-guest', '#f-total', '#f-fee'].forEach((sel) => $(sel).addEventListener('input', recalc));
+        ['#f-source', '#f-in', '#f-out', '#f-prop'].forEach((sel) => $(sel).addEventListener('change', recalc));
 
         $('#f-fee-auto').addEventListener('click', () => {
             const sug = suggestedFee();
@@ -2732,7 +2780,6 @@
             toast(`عمولة مقترحة ${money(sug)} بإعدادات ${SOURCE_LABEL[$('#f-source').value] || ''}`);
         });
 
-        ['#f-in', '#f-out', '#f-prop'].forEach((sel) => $(sel).addEventListener('change', recalc));
         recalc();
 
         $('#f-cancel').addEventListener('click', closeModal);
@@ -2742,6 +2789,7 @@
             const co = $('#f-out').value;
             const source = $('#f-source').value;
 
+            if (!source) return toast('اختر مصدر الحجز', true);
             if (!guest && source !== 'block') return toast('أدخل اسم الضيف', true);
             if (!ci || !co || nightsBetween(ci, co) < 1) return toast('تحقق من التواريخ', true);
 
@@ -2755,9 +2803,10 @@
             const saveBtn = $('#f-save');
             saveBtn.disabled = true;
 
-            const total = Number($('#f-total').value) || 0;
-            const fee = round2(Math.max(0, Number($('#f-fee').value) || 0));
-            if (fee > total) return toast('العمولة أكبر من المبلغ الإجمالي', true);
+            // الحجب بلا مبلغ، والعمولة تُحفظ فقط لمنصات جاذر إن وAirbnb
+            const total = source === 'block' ? 0 : (Number($('#f-total').value) || 0);
+            const fee = hasFee() ? round2(Math.max(0, Number($('#f-fee').value) || 0)) : 0;
+            if (fee > total) { saveBtn.disabled = false; return toast('العمولة أكبر من المبلغ الإجمالي', true); }
 
             const payload = {
                 propertyId: $('#f-prop').value,
@@ -2972,6 +3021,7 @@
                     <optgroup label="الزبائن">
                         <option value="manual"${c.source === 'manual' ? ' selected' : ''}>إضافة يدوية</option>
                         <option value="direct"${c.source === 'direct' ? ' selected' : ''}>الموقع المباشر</option>
+                        <option value="whatsapp"${c.source === 'whatsapp' ? ' selected' : ''}>واتساب</option>
                         <option value="gathern"${c.source === 'gathern' ? ' selected' : ''}>جاذر إن</option>
                         <option value="airbnb"${c.source === 'airbnb' ? ' selected' : ''}>Airbnb</option>
                     </optgroup>
