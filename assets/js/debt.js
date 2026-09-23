@@ -65,13 +65,11 @@ function unlock() {
     maybeOfferBiometric();
 }
 
+// عرض تفعيل الوجه بزر حقيقي (لا confirm) — iPhone يرفض التسجيل خارج ضغطة المستخدم
 function maybeOfferBiometric() {
     const gate = window.OwnerGate;
-    if (!gate || !gate.hasBiometricSupport() || gate.hasRegisteredBiometric()) return;
-    setTimeout(async () => {
-        if (!confirm('هل تريد تفعيل الدخول بالبصمة/الوجه على هذا الجهاز لتسجيل دخول أسرع؟')) return;
-        await gate.registerBiometric();
-    }, 600);
+    if (!gate || !gate.offerBiometric) return;
+    setTimeout(() => gate.offerBiometric(), 800);
 }
 
 function initLock() {
@@ -87,36 +85,51 @@ function initLock() {
         return;
     }
 
+    let faceFirst = false;   // الوجه معروض أولاً — لا نفتح لوحة المفاتيح فوقه
     if (bioBtn && gate && gate.hasBiometricSupport() && gate.hasRegisteredBiometric()) {
-        bioBtn.hidden = false;
-        bioBtn.addEventListener('click', async () => {
+        const tryFace = async () => {
             bioBtn.disabled = true;
-            bioBtn.textContent = 'جارٍ التحقق بالبصمة…';
+            bioBtn.textContent = 'جارٍ التحقق بالوجه…';
             const ok = await gate.tryBiometric();
             bioBtn.disabled = false;
-            bioBtn.textContent = '🫆 الدخول بالبصمة';
+            bioBtn.textContent = '🙂 الدخول بالوجه';
             if (ok) return unlock();
-            error.textContent = '⛔ تعذّر التحقق بالبصمة — استخدم رمز الدخول';
-        });
+            error.textContent = 'اضغط «الدخول بالوجه» للمحاولة مجدداً، أو أدخل كلمة المرور';
+        };
+        bioBtn.hidden = false;
+        bioBtn.textContent = '🙂 الدخول بالوجه';
+        bioBtn.addEventListener('click', tryFace);
+        // محاولة تلقائية عند الفتح؛ إن اشترط المتصفح ضغطة يبقى الزر ظاهراً
+        faceFirst = true;
+        tryFace();
     }
 
+    /* الرمز الاحتياطي الثابت أُزيل (كان مكتوباً في ملف عام). يُقبل رمز هذه الصفحة،
+       أو كلمة مرور حساب المالك في Supabase — كلمة واحدة لكل الصفحات */
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const raw = input.value.trim();
-
-        if (gate && gate.isFallbackPassword(raw)) return unlock();
+        if (!raw) return;
 
         const hash = await sha256(raw);
-        if (hash === PASS_HASH) {
-            unlock();
-        } else {
-            error.textContent = '⛔ رمز الدخول غير صحيح — تعذّر فتح الملف.';
-            input.value = '';
-            input.focus();
+        if (hash === PASS_HASH) return unlock();
+
+        const client = getSB();
+        if (gate && gate.signInOwner && client) {
+            try {
+                const { error: authErr } = await gate.signInOwner(client, raw);
+                if (!authErr) return unlock();
+            } catch (err) {
+                console.warn('[lock] تعذّر التحقق من كلمة المرور:', err);
+            }
         }
+
+        error.textContent = '⛔ كلمة المرور غير صحيحة — تعذّر فتح الملف.';
+        input.value = '';
+        input.focus();
     });
 
-    input.focus();
+    if (!faceFirst) input.focus();
 }
 
 /* ---------- مزامنة Supabase السحابية ---------- */

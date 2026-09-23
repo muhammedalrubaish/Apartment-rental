@@ -42,12 +42,16 @@
         </div>
 
         <h1>لوحة تحكم المالك</h1>
-        <p>هذه الصفحة خاصة بالمالك.<br>أدخل رمز الدخول للمتابعة.</p>
+        <p>هذه الصفحة خاصة بالمالك.<br>أدخل كلمة المرور للمتابعة.</p>
 
-        <button type="button" class="lock-biometric" id="lock-biometric" hidden>🫆 الدخول بالبصمة</button>
+        <button type="button" class="lock-biometric" id="lock-biometric" hidden>🙂 الدخول بالوجه</button>
 
-        <form class="lock-form" id="lock-form" autocomplete="off">
-            <input type="password" id="lock-pass" placeholder="رمز الدخول" inputmode="numeric" autocomplete="current-password">
+        <!-- حقل اسم المستخدم (مخفي بصرياً) يتيح لسلسلة مفاتيح iPhone حفظ كلمة المرور
+             وتعبئتها بالوجه تلقائياً. لوحة مفاتيح نصية لا رقمية: كلمة المرور قد تحوي حروفاً -->
+        <form class="lock-form" id="lock-form">
+            <input type="email" name="username" autocomplete="username" value="muhammedalrubaish@gmail.com" readonly tabindex="-1" aria-hidden="true"
+                   style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+            <input type="password" id="lock-pass" name="password" placeholder="كلمة المرور" autocomplete="current-password" autocapitalize="off" spellcheck="false">
             <button type="submit">دخول</button>
         </form>
 
@@ -384,6 +388,19 @@
                     <button class="btn btn-primary btn-sm" id="btn-push-on" hidden>تفعيل على هذا الجهاز</button>
                     <button class="btn btn-ghost btn-sm" id="btn-push-test" hidden>إرسال إشعار تجريبي</button>
                     <button class="btn btn-ghost btn-sm" id="btn-push-off" hidden style="color:var(--danger)">إيقاف على هذا الجهاز</button>
+                </div>
+            </div>
+
+            <!-- الدخول بالوجه (Face ID) على هذا الجهاز -->
+            <div class="card" id="bio-card">
+                <div class="card-head">
+                    <h2>🔐 الدخول بالوجه</h2>
+                    <span class="tag" id="bio-state"></span>
+                </div>
+                <p class="sub" id="bio-help" style="font-size:12.5px;line-height:1.9;margin-bottom:12px"></p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="btn btn-primary btn-sm" id="btn-bio-on" hidden>تفعيل على هذا الجهاز</button>
+                    <button class="btn btn-ghost btn-sm" id="btn-bio-off" hidden style="color:var(--danger)">إيقاف على هذا الجهاز</button>
                 </div>
             </div>
 

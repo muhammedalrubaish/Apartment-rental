@@ -15,9 +15,11 @@
        (JWT) تمنح صلاحية القراءة والكتابة على الرسائل بحكم سياسات RLS
        (role = authenticated)، وليست مجرد إخفاء واجهة كما كانت سابقاً.
 
-       البصمة والرمز الاحتياطي يحرسان الواجهة فقط ولا يمنحان صلاحية بيانات؛
-       لذلك لا يفتحان اللوحة إلا مع وجود جلسة Supabase صالحة، وإلا رُفضت كل
-       عمليات القراءة والكتابة من RLS وظهرت اللوحة فارغة دون تفسير.
+       البصمة/الوجه تحرس الواجهة فقط ولا تمنح صلاحية بيانات؛ لذلك لا تفتح اللوحة
+       إلا مع وجود جلسة Supabase صالحة، وإلا رُفضت كل عمليات القراءة والكتابة من
+       RLS وظهرت اللوحة فارغة دون تفسير. (أُزيل الرمز الاحتياطي الثابت: كان مكتوباً
+       في ملف عام يقرؤه أي زائر.)
+       على الجوال: كلمة المرور مرة واحدة لكل جهاز/تطبيق، ثم الوجه عند كل فتح.
        --------------------------------------------------------------------- */
     const OWNER_EMAIL = 'muhammedalrubaish@gmail.com';
 
@@ -52,14 +54,14 @@
         maybeOfferBiometric();
     }
 
+    // عرض تفعيل الوجه بزر حقيقي (لا confirm) — iPhone يرفض التسجيل خارج ضغطة المستخدم
     function maybeOfferBiometric() {
         const gate = window.OwnerGate;
-        if (!gate || !gate.hasBiometricSupport() || gate.hasRegisteredBiometric()) return;
-        setTimeout(async () => {
-            if (!confirm('هل تريد تفعيل الدخول بالبصمة/الوجه على هذا الجهاز لتسجيل دخول أسرع؟')) return;
-            const ok = await gate.registerBiometric();
-            toast(ok ? 'تم تفعيل الدخول بالبصمة' : 'تعذّر تفعيل البصمة على هذا الجهاز', !ok);
-        }, 600);
+        if (!gate || !gate.offerBiometric) return;
+        setTimeout(() => gate.offerBiometric((ok) => {
+            toast(ok ? 'تم تفعيل الدخول بالوجه ✅' : 'تعذّر تفعيل الدخول بالوجه على هذا الجهاز', !ok);
+            if ($('#bio-state')) renderBioCard();
+        }), 800);
     }
 
     async function initGate() {
@@ -75,48 +77,44 @@
         // جلسة قاعدة البيانات هي مصدر الصلاحية الوحيد؛ البصمة والجلسة الموحّدة
         // تحرسان الواجهة فوقها ولا تحلّان محلّها.
         const hasDbSession = !!(await supabaseSession());
+        let faceFirst = false;   // الوجه معروض أولاً — لا نفتح لوحة المفاتيح فوقه
 
         if (hasDbSession) {
             // القفل المحلي سليم، أو لا بصمة مسجّلة على الجهاز → دخول مباشر
             if (!gate || gate.isSessionValid() || !gate.hasRegisteredBiometric()) return unlock();
 
-            // انتهى القفل المحلي (12 ساعة) والبصمة مسجّلة → يكفي التحقق بالبصمة
+            // الوجه مفعّل وانتهى القفل المحلي → الوجه أولاً، وكلمة المرور بديل
             if (bioBtn && gate.hasBiometricSupport()) {
-                bioBtn.hidden = false;
-                bioBtn.addEventListener('click', async () => {
+                const tryFace = async () => {
                     bioBtn.disabled = true;
-                    bioBtn.textContent = 'جارٍ التحقق بالبصمة…';
+                    bioBtn.textContent = 'جارٍ التحقق بالوجه…';
                     const ok = await gate.tryBiometric();
                     bioBtn.disabled = false;
-                    bioBtn.textContent = '🫆 الدخول بالبصمة';
+                    bioBtn.textContent = '🙂 الدخول بالوجه';
                     if (ok) return unlock();
-                    err.textContent = 'تعذّر التحقق بالبصمة — استخدم رمز الدخول';
-                });
+                    err.textContent = 'اضغط «الدخول بالوجه» للمحاولة مجدداً، أو أدخل كلمة المرور';
+                };
+                bioBtn.hidden = false;
+                bioBtn.textContent = '🙂 الدخول بالوجه';
+                bioBtn.addEventListener('click', tryFace);
+                // محاولة تلقائية عند الفتح؛ إن اشترط المتصفح ضغطة يبقى الزر ظاهراً
+                faceFirst = true;
+                tryFace();
             }
         } else if (gate) {
             // لا جلسة بيانات: لا نفتح اللوحة مهما كان القفل المحلي، لأنها ستظهر
             // فارغة ويفشل كل حفظ. الجلسة الموحّدة تُترك كما هي لأنها مشتركة مع
             // صفحة التحصيل التي تعمل محلياً بلا قاعدة بيانات.
             if (gate.isSessionValid() || gate.hasRegisteredBiometric()) {
-                err.textContent = 'انتهت جلسة قاعدة البيانات — أدخل رمز المالك مرة واحدة لتجديدها، وتعود البصمة للعمل بعدها';
+                err.textContent = 'انتهت جلسة قاعدة البيانات — أدخل كلمة المرور مرة واحدة لتجديدها، ويعود الدخول بالوجه بعدها';
             }
         }
 
-        input.focus();
+        if (!faceFirst) input.focus();
         let tries = 0;
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-
-            // الرمز الاحتياطي يرفع القفل المحلي فقط؛ لا يفتح اللوحة إلا إذا كانت
-            // جلسة قاعدة البيانات قائمة أصلاً، وإلا فتحنا لوحة لا تقرأ ولا تحفظ.
-            if (gate && gate.isFallbackPassword(input.value)) {
-                if (await supabaseSession()) return unlock();
-                err.textContent = 'الرمز الاحتياطي يفتح الواجهة فقط — أدخل رمز المالك الحقيقي لتفعيل قراءة البيانات وحفظها';
-                input.value = '';
-                input.focus();
-                return;
-            }
 
             if (!client) {
                 err.textContent = 'تعذّر الاتصال بالخادم — تحقق من الإنترنت';
@@ -144,7 +142,7 @@
             }
 
             tries++;
-            err.textContent = tries >= 3 ? 'رمز غير صحيح — تأكد من الرمز' : 'رمز غير صحيح';
+            err.textContent = tries >= 3 ? 'كلمة المرور غير صحيحة — تأكد منها أو غيّرها من Supabase' : 'كلمة المرور غير صحيحة';
             input.value = '';
             input.focus();
         });
@@ -1903,6 +1901,48 @@
         }
     }
 
+    /* بطاقة «الدخول بالوجه» — حالة هذا الجهاز وتفعيله/إيقافه (التسجيل من ضغطة الزر مباشرة) */
+    function renderBioCard() {
+        const st = $('#bio-state');
+        if (!st) return;
+        const gate = window.OwnerGate;
+        const on = $('#btn-bio-on'), off = $('#btn-bio-off'), help = $('#bio-help');
+        on.hidden = off.hidden = true;
+        if (!gate || !gate.hasBiometricSupport()) {
+            st.className = 'tag tag-warn';
+            st.textContent = 'غير مدعوم';
+            help.textContent = 'هذا الجهاز أو المتصفح لا يدعم الدخول بالوجه/البصمة.';
+        } else if (gate.hasRegisteredBiometric()) {
+            st.className = 'tag tag-ok';
+            st.textContent = 'مفعّل';
+            help.textContent = 'يُطلب وجهك عند كل فتح للوحة (بعد 5 دقائق من آخر دخول). كلمة المرور تبقى بديلاً.';
+            off.hidden = false;
+        } else {
+            st.className = 'tag';
+            st.textContent = 'غير مفعّل';
+            help.textContent = 'فعّله ليُطلب وجهك عند فتح اللوحة بدل كتابة كلمة المرور. على iPhone فعّله من داخل تطبيق اللوحة على الشاشة الرئيسية.';
+            on.hidden = false;
+        }
+    }
+
+    function bindBioCard() {
+        const on = $('#btn-bio-on');
+        if (!on) return;
+        on.addEventListener('click', async () => {
+            on.disabled = true;
+            const ok = await window.OwnerGate.registerBiometric();   // مباشرة من الضغطة
+            on.disabled = false;
+            if (ok) window.OwnerGate.markUnlocked();
+            toast(ok ? 'تم تفعيل الدخول بالوجه ✅' : 'تعذّر التفعيل — تأكد من تفعيل Face ID للمتصفح من إعدادات الجهاز', !ok);
+            renderBioCard();
+        });
+        $('#btn-bio-off').addEventListener('click', () => {
+            window.OwnerGate.resetBiometric();
+            toast('أُوقف الدخول بالوجه على هذا الجهاز');
+            renderBioCard();
+        });
+    }
+
     function bindPushCard() {
         const on = $('#btn-push-on');
         if (!on) return;
@@ -2949,6 +2989,7 @@
 
     function renderNotifications() {
         renderPushCard();
+        renderBioCard();
         const list = state.notifications.filter((n) => notifFilter === 'all' || n.type === notifFilter);
 
         if (!list.length) {
@@ -3982,6 +4023,7 @@
         applyLang();
         bind();
         bindPushCard();    // أزرار إشعارات الجوال
+        bindBioCard();     // أزرار الدخول بالوجه
         updateBadges();
         // اعرض الواجهة فوراً، ثم تُحدَّث تلقائياً حالما تصل البيانات من الخادم
         const hash = location.hash.replace('#', '');

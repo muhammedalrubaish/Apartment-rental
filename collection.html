@@ -46,14 +46,14 @@
 
             <h1>حاسبة تحصيل الدين</h1>
             <div class="lock-subtitle">سجل المطالبة والتسوية المالية</div>
-            <p>هذه الوثيقة خاصة بالمالك حصراً.<br>يُرجى إدخال رمز الدخول للاطلاع على تفاصيل التحصيل.</p>
+            <p>هذه الوثيقة خاصة بالمالك حصراً.<br>يُرجى إدخال كلمة المرور للاطلاع على تفاصيل التحصيل.</p>
 
-            <button type="button" id="lock-biometric" class="btn-lock-biometric" hidden>🫆 الدخول بالبصمة</button>
+            <button type="button" id="lock-biometric" class="btn-lock-biometric" hidden>🙂 الدخول بالوجه</button>
 
             <form id="lock-form" autocomplete="off">
                 <div class="lock-field">
                     <span class="lock-field-icon">🔑</span>
-                    <input type="password" id="lock-input" placeholder="رمز الدخول" autocomplete="current-password">
+                    <input type="password" id="lock-input" placeholder="كلمة المرور" autocomplete="current-password" autocapitalize="off" spellcheck="false">
                 </div>
                 <button type="submit" class="btn-lock-enter">فتح الملف</button>
             </form>
