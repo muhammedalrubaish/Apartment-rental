@@ -635,6 +635,9 @@ body.lightbox-open { overflow: hidden; }
     color: #334155;
 }
 
+/* نص قسم «عن هذا المسكن» متوسّط */
+.description-text.text-center { text-align: center; }
+
 /* Amenities Grid */
 .amenities-grid {
     display: grid;
