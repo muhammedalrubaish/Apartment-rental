@@ -854,69 +854,142 @@ const FURNITURE = {
     },
 
     kitchen(R) {
-        /* الكف يستند إلى أحد جدران المطبخ حسب facing (north / south / west / east).
-           يُبنى في إطار محلي: الطول على المحور x والظهر على الجدار عند z = 0 والوجه نحو +z،
-           ثم يُدار ويُثبَّت على وجه الجدار المطلوب. */
+        /* المطبخ مطابق لصورته الفعلية. يُبنى في إطار محلي: الطول على x، الظهر على الجدار
+           عند z = 0، والوجه نحو +z؛ ولمن يقف أمامه: اليسار = −x واليمين = +x.
+           من اليسار: ثلاجة صغيرة فوقها صينية بغلاية ونبتة وطفاية حريق، ثم خزائن سفلية بيضاء
+           بمقابض سوداء وسطح جرانيت أسود، عليه: مجلى بخلاط عالٍ ودش صغير، سلة تنشيف الصحون،
+           موقد كهربائي متنقل بشعلتين، ثم الميكروويف. فوقها خزائن علوية بيضاء بإطار أسود،
+           ومنشفة صحون معلّقة على الجدار، وسجادة رمادية بأهداب أمامه. */
         const half = (R.T || 0.25) / 2;
         const f = R.facing || 'north';
         const alongZ = f === 'west' || f === 'east';
         const span = alongZ ? R.d : R.w;
-        const run = Math.max(1.4, Math.min(2.5, span - 0.45));     // طول الكف
-
+        const L = Math.max(1.8, Math.min(2.5, span - 0.45));       // طول الكف كاملاً
         const g = new THREE.Group();
-        const L = run;
-        const doors = Math.max(2, Math.round((L - 0.62) / 0.5));
-        const cabL = L - 0.62;                                      // الخزائن (والباقي للثلاجة)
-        const cabX = -L / 2 + cabL / 2;
-        const fridgeX = L / 2 - 0.31;
+        const black = MAT.blackMetal;
+        const whiteGloss = MAT.white;
 
-        g.add(rbox(cabL, 0.85, 0.6, 0.012, MAT.white, cabX, 0.45, 0.31));                 // خزائن سفلية
-        g.add(rbox(cabL + 0.02, 0.05, 0.64, 0.01, MAT.stone, cabX, 0.9, 0.32));           // سطح جرانيت
-        for (let i = 0; i < doors; i++) {
-            const dx = cabX - cabL / 2 + (cabL / doors) * (i + 0.5);
-            if (i) g.add(box(0.005, 0.8, 0.005, MAT.dark, cabX - cabL / 2 + (cabL / doors) * i, 0.45, 0.612));
-            g.add(box(0.14, 0.015, 0.02, MAT.steel, dx, 0.8, 0.622));
+        // ── الثلاجة الصغيرة يساراً ──
+        const fW = 0.5, fX = -L / 2 + fW / 2;
+        g.add(rbox(fW, 0.84, 0.55, 0.02, whiteGloss, fX, 0.42, 0.3));
+        g.add(box(fW - 0.04, 0.005, 0.005, MAT.dark, fX, 0.7, 0.577));                // خط باب الفريزر
+        g.add(box(0.015, 0.1, 0.025, MAT.steel, fX - fW / 2 + 0.05, 0.62, 0.585));    // المقبض
+        g.add(rbox(0.46, 0.02, 0.34, 0.008, whiteGloss, fX + 0.02, 0.855, 0.36));     // صينية
+        // غلاية ستانلس بمقبض أسود
+        g.add(cyl(0.075, 0.085, 0.2, MAT.steel, fX + 0.1, 0.965, 0.38, 24));
+        g.add(cyl(0.02, 0.02, 0.02, black, fX + 0.1, 1.075, 0.38, 12));
+        g.add(box(0.03, 0.15, 0.08, black, fX + 0.19, 0.97, 0.38));
+        // نبتة صغيرة في أصيص مخطط
+        g.add(cyl(0.055, 0.05, 0.1, MAT.pot, fX - 0.12, 0.915, 0.42, 16));
+        for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2;
+            const l = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), MAT.leaf);
+            l.scale.set(0.6, 1.6, 0.4);
+            l.position.set(fX - 0.12 + Math.cos(a) * 0.04, 1.0 + (i % 3) * 0.03, 0.42 + Math.sin(a) * 0.04);
+            l.rotation.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5);
+            g.add(l);
         }
+        // طفاية حريق حمراء خلف الصينية على الجدار
+        const redMat = mat(0xc62828, { roughness: 0.35, metalness: 0.2 });
+        g.add(cyl(0.05, 0.05, 0.34, redMat, fX - 0.16, 1.03, 0.08, 20));
+        g.add(cyl(0.02, 0.02, 0.05, black, fX - 0.16, 1.225, 0.08, 10));
+        g.add(box(0.12, 0.02, 0.02, redMat, fX - 0.12, 1.25, 0.08));
 
-        // المغسلة والخلاط، سطح الطبخ، الميكروويف، الغلاية
-        const sinkX = cabX - cabL * 0.28;
-        const hobX = cabX + cabL * 0.12;
-        g.add(box(0.5, 0.012, 0.38, MAT.steel, sinkX, 0.93, 0.32));
-        g.add(cyl(0.015, 0.015, 0.3, MAT.steel, sinkX, 1.07, 0.1, 12));
-        g.add(box(0.03, 0.03, 0.18, MAT.steel, sinkX, 1.21, 0.18));
-        g.add(rbox(0.46, 0.012, 0.34, 0.004, MAT.screenOff, hobX, 0.93, 0.32));
-        [-0.12, 0.12].forEach((dx) => g.add(cyl(0.08, 0.08, 0.004, MAT.dark, hobX + dx, 0.938, 0.32, 24)));
-        g.add(rbox(0.5, 0.3, 0.36, 0.02, MAT.white, cabX + cabL / 2 - 0.3, 1.08, 0.24));
-        g.add(box(0.3, 0.2, 0.005, MAT.screenOff, cabX + cabL / 2 - 0.32, 1.08, 0.421));
-        g.add(cyl(0.07, 0.08, 0.2, MAT.steel, sinkX - 0.4, 0.98, 0.2, 20));
+        // ── الخزائن السفلية وسطح الجرانيت ──
+        const cabL = L - fW - 0.02;
+        const cabX = L / 2 - cabL / 2;
+        g.add(box(cabL, 0.08, 0.54, black, cabX, 0.04, 0.29));                          // قاعدة سوداء
+        g.add(rbox(cabL, 0.78, 0.58, 0.01, whiteGloss, cabX, 0.47, 0.29));
+        g.add(rbox(cabL + 0.03, 0.035, 0.62, 0.008, mat(0x121417, { roughness: 0.12, metalness: 0.15 }), cabX - 0.015, 0.878, 0.31)); // جرانيت أسود لامع
+        // الأبواب: مفرد، زوج، زوج، مفرد — بمقابض سوداء عمودية
+        const doorW = cabL / 6;
+        const x0 = cabX - cabL / 2;
+        for (let i = 1; i < 6; i++) g.add(box(0.005, 0.74, 0.005, MAT.dark, x0 + doorW * i, 0.47, 0.583));
+        [[0.85, 1], [1.8, 2], [2.2, 2], [3.8, 4], [4.2, 4], [5.15, 5]].forEach(([k]) =>
+            g.add(box(0.014, 0.16, 0.02, black, x0 + doorW * k, 0.7, 0.595)));
 
-        // رف مفتوح وشفاط فوق سطح الطبخ — الجدار الداخلي مقطوع عند 1.5 م تقريباً
-        g.add(rbox(cabL * 0.7, 0.03, 0.24, 0.01, MAT.walnut, cabX - cabL * 0.1, 1.38, 0.12));
-        [[-0.2, 0.09], [0, 0.12], [0.18, 0.08]].forEach(([dx, h]) =>
-            g.add(cyl(0.045, 0.045, h, MAT.ceramic, sinkX + 0.2 + dx, 1.395 + h / 2, 0.12, 16)));
-        g.add(rbox(0.5, 0.12, 0.34, 0.02, MAT.steel, hobX, 1.42, 0.17));
+        // ── المجلى بخلاط عالٍ ودش صغير ──
+        const sinkX = x0 + cabL * 0.2;
+        g.add(box(0.5, 0.012, 0.38, MAT.steel, sinkX, 0.9, 0.33));
+        g.add(box(0.46, 0.006, 0.34, mat(0x8d949b, { metalness: 0.8, roughness: 0.3 }), sinkX, 0.893, 0.33));
+        g.add(cyl(0.02, 0.022, 0.36, MAT.steel, sinkX - 0.02, 1.08, 0.1, 16));          // عمود الخلاط
+        const chrome = mat(0x9aa3ab, { roughness: 0.15, metalness: 0.9 });
+        const neck = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.018, 12, 24, Math.PI), chrome);
+        neck.rotation.y = Math.PI / 2;                                                  // قوس نحو الحوض
+        neck.position.set(sinkX - 0.02, 1.26, 0.19);
+        g.add(neck);
+        g.add(cyl(0.016, 0.016, 0.07, MAT.steel, sinkX - 0.02, 1.235, 0.28, 12));       // الدش الصغير
+        g.add(box(0.07, 0.016, 0.02, MAT.steel, sinkX + 0.03, 1.03, 0.1));              // ذراع التحكم
 
-        // ثلاجة بمقبض عند طرف الكف
-        g.add(rbox(0.6, 1.45, 0.6, 0.02, MAT.white, fridgeX, 0.73, 0.31));
-        g.add(box(0.02, 0.4, 0.03, MAT.steel, fridgeX - 0.24, 0.95, 0.625));
-        g.add(box(0.56, 0.005, 0.005, MAT.dark, fridgeX, 1.0, 0.612));
+        // ── سلة تنشيف الصحون البيضاء ──
+        const rackX = sinkX + 0.46;
+        g.add(rbox(0.46, 0.012, 0.32, 0.005, whiteGloss, rackX, 0.9, 0.36));            // صينية التصريف
+        g.add(rbox(0.4, 0.09, 0.26, 0.01, mat(0xf4f4f0, { roughness: 0.5, transparent: true, opacity: 0.85 }), rackX, 0.955, 0.36));
+        for (let i = 0; i < 6; i++) g.add(cyl(0.07, 0.07, 0.006, whiteGloss, rackX - 0.15 + i * 0.06, 1.0, 0.36, 18)
+            .rotateZ(Math.PI / 2));                                                      // صحون قائمة
+        // حامل أدوات صغير خلف السلة
+        g.add(cyl(0.04, 0.04, 0.12, black, rackX - 0.17, 0.95, 0.12, 12));
 
-        // سجادة أمام الكف
-        g.add(rbox(Math.min(1.6, cabL), 0.02, 0.7, 0.008, MAT.rug, cabX, 0.05, 1.05));
+        // ── موقد كهربائي متنقل بشعلتين ──
+        const hobX = rackX + 0.42;
+        g.add(rbox(0.44, 0.07, 0.26, 0.01, MAT.steel, hobX, 0.93, 0.33));
+        [-0.1, 0.1].forEach((dx) => g.add(cyl(0.075, 0.075, 0.012, MAT.dark, hobX + dx, 0.97, 0.33, 24)));
+        [-0.1, 0.1].forEach((dx) => g.add(cyl(0.015, 0.015, 0.02, black, hobX + dx, 0.93, 0.465, 10).rotateX(Math.PI / 2)));
 
-        /* تثبيت المجموعة على وجه الجدار: الإدارة تجعل الوجه (+z المحلي) نحو داخل المطبخ،
-           والكف يبدأ من الركن الشمالي أو الغربي */
+        // ── الميكروويف يميناً ──
+        const mwX = L / 2 - 0.29;
+        g.add(rbox(0.52, 0.3, 0.4, 0.015, whiteGloss, mwX, 1.045, 0.3));
+        g.add(box(0.3, 0.18, 0.005, MAT.screenOff, mwX - 0.06, 1.045, 0.502));          // النافذة
+        g.add(box(0.1, 0.2, 0.005, mat(0xdfe3e6, { roughness: 0.4 }), mwX + 0.18, 1.045, 0.502)); // لوحة الأزرار
+
+        // ── منشفة صحون معلّقة على الجدار بين المجلى والسلة ──
+        const towelTex = makeCanvasTexture(64, 96, (c, W, H) => {
+            c.fillStyle = '#e8ece8'; c.fillRect(0, 0, W, H);
+            c.strokeStyle = '#6f8f7c'; c.lineWidth = 5;
+            for (let y = 10; y < H; y += 16) {
+                c.beginPath();
+                for (let x = 0; x <= W; x += 8) c.lineTo(x, y + ((x / 8) % 2 ? 5 : -5));
+                c.stroke();
+            }
+        });
+        g.add(box(0.03, 0.03, 0.02, mat(0x6b4e3a), sinkX + 0.24, 1.3, 0.01));           // المعلاق
+        g.add(box(0.15, 0.2, 0.012, new THREE.MeshStandardMaterial({ map: towelTex, roughness: 0.95 }), sinkX + 0.24, 1.19, 0.018));
+
+        // ── الخزائن العلوية: أبواب بيضاء بإطار أسود ومقابض سوداء ──
+        const upL = L - 0.1, upX = 0.02, upY = 1.56, upH = 0.4, upD = 0.32;
+        // جسم الخزائن أصغر بمليمترات حتى لا تتطابق أسطحه مع الحواف السوداء (تفادي الوميض)
+        g.add(box(upL - 0.006, upH - 0.006, upD - 0.004, whiteGloss, upX, upY, upD / 2));
+        // حواف سوداء رفيعة حول الواجهة والجانبين كما في الصورة
+        [upY + upH / 2 - 0.011, upY - upH / 2 + 0.011].forEach((y) =>
+            g.add(box(upL, 0.022, 0.03, black, upX, y, upD - 0.013)));             // حافتا الواجهة العلوية والسفلية فقط
+        [-1, 1].forEach((sx) => g.add(box(0.022, upH, upD + 0.004, black, upX + sx * (upL / 2 - 0.011), upY, upD / 2)));
+        g.add(box(0.012, upH - 0.05, upD - 0.05, whiteGloss, upX - upL / 2 - 0.001, upY, upD / 2));   // الجانب الأيسر
+        const nU = 7, uW = (upL - 0.03) / nU;
+        for (let i = 0; i < nU; i++) {
+            const ux = upX - upL / 2 + 0.015 + uW * (i + 0.5);
+            g.add(box(uW - 0.012, upH - 0.03, 0.012, whiteGloss, ux, upY, upD + 0.002));
+        }
+        // المقابض كما في الصورة: زوجان متقابلان (1–2 و4–5) وأبواب مفردة بمقبض عند حافتها
+        const uEdge = (i) => upX - upL / 2 + 0.015 + uW * i;          // حافة الباب i اليسرى
+        [uEdge(2) - 0.04, uEdge(2) + 0.04, uEdge(3) + 0.05, uEdge(5) - 0.04, uEdge(5) + 0.04, uEdge(6) + 0.05, uEdge(1) - 0.05]
+            .forEach((ux) => g.add(box(0.012, 0.14, 0.02, black, ux, upY - 0.07, upD + 0.015)));
+
+        // ── سجادة رمادية بأهداب أمام الكف ──
+        g.add(box(Math.min(1.6, cabL), 0.012, 0.6, mat(0xa6a39d, { roughness: 1, map: tiled(makeFabricTexture(), 6, 3) }),
+            cabX + 0.2, 0.046, 0.95));
+
+        /* تثبيت المجموعة على وجه الجدار: الإدارة تجعل الوجه (+z المحلي) نحو داخل المطبخ */
         if (f === 'west') {
-            g.rotation.y = Math.PI / 2;                       // +z المحلي → +x (نحو الشرق)، والثلاجة في الركن الشمالي
-            g.position.set(R.x0 + half, 0, R.z0 + half + run / 2 + 0.02);
+            g.rotation.y = Math.PI / 2;                       // +z المحلي → الشرق، و+x المحلي → الشمال
+            g.position.set(R.x0 + half, 0, R.z0 + half + L / 2 + 0.02);
         } else if (f === 'east') {
             g.rotation.y = -Math.PI / 2;
-            g.position.set(R.x0 + R.w - half, 0, R.z0 + half + run / 2 + 0.02);
+            g.position.set(R.x0 + R.w - half, 0, R.z0 + half + L / 2 + 0.02);
         } else if (f === 'south') {
             g.rotation.y = Math.PI;
-            g.position.set(R.x0 + half + run / 2 + 0.02, 0, R.z0 + R.d - half);
+            g.position.set(R.x0 + half + L / 2 + 0.02, 0, R.z0 + R.d - half);
         } else {
-            g.position.set(R.x0 + half + run / 2 + 0.02, 0, R.z0 + half);
+            g.position.set(R.x0 + half + L / 2 + 0.02, 0, R.z0 + half);
         }
         return [g];
     },
@@ -1106,7 +1179,13 @@ function buildApartment(scene, plan) {
             ? (Math.abs(seg.at) < EPS || Math.abs(seg.at - D) < EPS)
             : (Math.abs(seg.at) < EPS || Math.abs(seg.at - W) < EPS);
         const isFront = seg.axis === 'x' && Math.abs(seg.at - D) < EPS;
-        const h = isFront ? frontH : (onOuter ? wallH : innerH);
+        /* جدار داخلي بارتفاع الجدار الخارجي إن طلبته غرفة (tallWall) — يحمل خزائن المطبخ العلوية */
+        const tall = seg.axis === 'z' && rooms.some((r) => {
+            if (!r.tallWall) return false;
+            const x = r.tallWall === 'west' ? r.x : r.x + r.w;
+            return Math.abs(seg.at - x) < EPS && seg.from < r.z + r.d && seg.to > r.z;
+        });
+        const h = isFront ? frontH : ((onOuter || tall) ? wallH : innerH);
         const material = onOuter ? MAT.wall : MAT.wallIn;
 
         subtract(seg).forEach((p) => {
