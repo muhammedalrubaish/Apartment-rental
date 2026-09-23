@@ -665,8 +665,13 @@ body.lightbox-open { overflow: hidden; }
     color: #334155;
 }
 
-/* نص قسم «عن هذا المسكن» متوسّط */
-.description-text.text-center { text-align: center; }
+/* ضبط النص من الجهتين: كل الأسطر بطول واحد بلا فراغات على الأطراف،
+   والسطر الأخير يبدأ من اليمين كالمعتاد في الكتابة العربية */
+.description-text.text-justify {
+    text-align: justify;
+    text-align-last: start;
+    text-justify: inter-word;
+}
 
 /* Amenities Grid */
 .amenities-grid {
