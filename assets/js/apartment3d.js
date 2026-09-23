@@ -780,13 +780,18 @@ const FURNITURE = {
         const sofaDep = 0.9;
         const sofaZ = R.z0 + Math.max(sofaLen / 2 + 0.72, R.d * 0.6);
         const sofaX = faceX + inward * (sofaDep / 2 + 0.03);
-        const tableX = sofaX + inward * (sofaDep / 2 + 0.78);
-        // الكرسيان في صف بجانب الطرف الجنوبي للكنب، بين الكنب والطاولة
-        const chairs = [
-            [faceX + inward * 1.25, sofaZ + 0.74],
-            [faceX + inward * 1.32, sofaZ + 1.42],
-        ];
         const tvX = R.mx + inward * 0.45;
+        const tableXBase = sofaX + inward * (sofaDep / 2 + 0.78);
+        // الكرسيان في صف بجانب الطرف الجنوبي للكنب، بين الكنب والطاولة
+        /* السجادة والطاولة الزجاجية والكرسيان تُزاح معاً نحو التلفزيون حتى يتطابق مركز
+           السجادة مع مركز طاولة التلفزيون، وطول الطاولة = عرض السجادة (كما في الصورة) */
+        const RUG_W = 2.0;
+        const tableX = tvX;
+        const shift = tableX - tableXBase;
+        const chairs = [
+            [faceX + inward * 1.25 + shift, sofaZ + 0.74],
+            [faceX + inward * 1.32 + shift, sofaZ + 1.42],
+        ];
         const consoleZ = northZ + 0.2;
 
         // التلفزيون: شاشة على قاعدة فوق الطاولة — قابلة للتشغيل بالضغط (تفتح يوتيوب)
@@ -796,12 +801,12 @@ const FURNITURE = {
 
         const out = [
             // طاولة التلفزيون الرمادية: درجان بنقشة وفتحة وسطى وأرجل سوداء
-            rbox(1.7, 0.4, 0.4, 0.02, MAT.consoleMarble, tvX, 0.3, consoleZ),
-            box(0.55, 0.16, 0.36, MAT.dark, tvX, 0.3, consoleZ + 0.03),                      // الفتحة الوسطى
-            box(0.005, 0.36, 0.005, MAT.dark, tvX - 0.3, 0.3, consoleZ + 0.202),
-            box(0.005, 0.36, 0.005, MAT.dark, tvX + 0.3, 0.3, consoleZ + 0.202),
+            rbox(RUG_W, 0.4, 0.4, 0.02, MAT.consoleMarble, tvX, 0.3, consoleZ),               // بطول السجادة
+            box(RUG_W * 0.33, 0.16, 0.36, MAT.dark, tvX, 0.3, consoleZ + 0.03),                // الفتحة الوسطى
+            box(0.005, 0.36, 0.005, MAT.dark, tvX - RUG_W * 0.18, 0.3, consoleZ + 0.202),
+            box(0.005, 0.36, 0.005, MAT.dark, tvX + RUG_W * 0.18, 0.3, consoleZ + 0.202),
             ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) =>
-                cyl(0.012, 0.012, 0.1, MAT.blackMetal, tvX + sx * 0.78, 0.05, consoleZ + sz * 0.15, 8)),
+                cyl(0.012, 0.012, 0.1, MAT.blackMetal, tvX + sx * (RUG_W / 2 - 0.07), 0.05, consoleZ + sz * 0.15, 8)),
             box(1.26, 0.74, 0.025, MAT.dark, tvX, 0.98, consoleZ + 0.005),                    // إطار الشاشة
             screen,
             box(0.3, 0.02, 0.14, MAT.dark, tvX, 0.51, consoleZ),                              // قاعدة الشاشة
@@ -836,7 +841,7 @@ const FURNITURE = {
             lilies(tableX, 0.46, sofaZ - 0.1, MAT.ceramic, true),
 
             // سجادة رمادية هندسية بأهداب تمتد تحت الطاولة والكرسيين
-            box(2.0, 0.015, 2.2, MAT.rugGeo, tableX, 0.048, sofaZ + 0.3),
+            box(RUG_W, 0.015, 2.2, MAT.rugGeo, tableX, 0.048, sofaZ + 0.3),
 
             // كرسيان رماديان بجانب الكنب، كلٌّ منهما مُدار ليواجه الشاشة مباشرة
             ...chairs.map(([cx, cz]) =>
