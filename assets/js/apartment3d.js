@@ -822,46 +822,71 @@ const FURNITURE = {
     },
 
     kitchen(R) {
-        // الكف يستند إلى الجدار الشمالي أو الجنوبي حسب facing
-        const north = R.facing === 'north';
-        const backZ = north ? R.z0 + 0.32 : R.z0 + R.d - 0.32;     // مركز الخزائن السفلية
-        const upZ = north ? R.z0 + 0.19 : R.z0 + R.d - 0.19;       // الخزائن العلوية
-        const inward = north ? 1 : -1;                              // اتجاه داخل الغرفة
-        const cabW = Math.max(1.2, R.w - 0.5);
-        const frontZ = backZ + inward * 0.3;
-        const upFront = upZ + inward * 0.17;
-        const doors = Math.max(2, Math.round(cabW / 0.5));
+        /* الكف يستند إلى أحد جدران المطبخ حسب facing (north / south / west / east).
+           يُبنى في إطار محلي: الطول على المحور x والظهر على الجدار عند z = 0 والوجه نحو +z،
+           ثم يُدار ويُثبَّت على وجه الجدار المطلوب. */
+        const half = (R.T || 0.25) / 2;
+        const f = R.facing || 'north';
+        const alongZ = f === 'west' || f === 'east';
+        const span = alongZ ? R.d : R.w;
+        const run = Math.max(1.4, Math.min(2.5, span - 0.45));     // طول الكف
 
-        const out = [
-            rbox(cabW, 0.85, 0.6, 0.012, MAT.white, R.mx, 0.45, backZ),                  // خزائن سفلية
-            rbox(cabW + 0.04, 0.05, 0.64, 0.01, MAT.stone, R.mx, 0.9, backZ),            // سطح جرانيت
-            rbox(cabW * 0.86, 0.55, 0.34, 0.012, MAT.white, R.mx, 1.5, upZ),             // خزائن علوية
-        ];
-        // أبواب الخزائن ومقابضها
+        const g = new THREE.Group();
+        const L = run;
+        const doors = Math.max(2, Math.round((L - 0.62) / 0.5));
+        const cabL = L - 0.62;                                      // الخزائن (والباقي للثلاجة)
+        const cabX = -L / 2 + cabL / 2;
+        const fridgeX = L / 2 - 0.31;
+
+        g.add(rbox(cabL, 0.85, 0.6, 0.012, MAT.white, cabX, 0.45, 0.31));                 // خزائن سفلية
+        g.add(rbox(cabL + 0.02, 0.05, 0.64, 0.01, MAT.stone, cabX, 0.9, 0.32));           // سطح جرانيت
         for (let i = 0; i < doors; i++) {
-            const dx = R.mx - cabW / 2 + (cabW / doors) * (i + 0.5);
-            if (i) out.push(box(0.005, 0.8, 0.005, MAT.dark, R.mx - cabW / 2 + (cabW / doors) * i, 0.45, frontZ + inward * 0.002));
-            out.push(box(0.14, 0.015, 0.02, MAT.steel, dx, 0.8, frontZ + inward * 0.012));
-            if (Math.abs(dx - R.mx) < cabW * 0.43) out.push(box(0.12, 0.015, 0.02, MAT.steel, dx, 1.3, upFront + inward * 0.012));
+            const dx = cabX - cabL / 2 + (cabL / doors) * (i + 0.5);
+            if (i) g.add(box(0.005, 0.8, 0.005, MAT.dark, cabX - cabL / 2 + (cabL / doors) * i, 0.45, 0.612));
+            g.add(box(0.14, 0.015, 0.02, MAT.steel, dx, 0.8, 0.622));
         }
 
-        const sinkX = R.mx - cabW * 0.28;
-        out.push(
-            box(0.5, 0.012, 0.38, MAT.steel, sinkX, 0.93, backZ),                          // المغسلة
-            cyl(0.015, 0.015, 0.3, MAT.steel, sinkX, 1.07, backZ - inward * 0.2, 12),      // الخلاط
-            box(0.03, 0.03, 0.18, MAT.steel, sinkX, 1.21, backZ - inward * 0.12),
-            rbox(0.46, 0.012, 0.34, 0.004, MAT.screenOff, R.mx + cabW * 0.05, 0.93, backZ),// سطح طبخ زجاجي
-            rbox(0.5, 0.3, 0.36, 0.02, MAT.white, R.mx + cabW * 0.3, 1.08, backZ),         // ميكروويف
-            box(0.3, 0.2, 0.005, MAT.screenOff, R.mx + cabW * 0.28, 1.08, backZ + inward * 0.181),
-            rbox(0.6, 0.85, 0.58, 0.02, MAT.white, R.x0 + 0.42, 0.43, backZ),              // ثلاجة صغيرة
-            box(0.02, 0.4, 0.03, MAT.steel, R.x0 + 0.65, 0.5, backZ + inward * 0.3),
-            cyl(0.07, 0.08, 0.2, MAT.steel, R.x0 + 0.42, 0.98, backZ - inward * 0.06, 20), // الغلاية
-            rbox(R.w * 0.5, 0.02, 0.8, 0.008, MAT.rug, R.mx, 0.05, backZ + inward * 1.05), // سجادة
-        );
-        [[-0.12, 0], [0.12, 0]].forEach(([dx]) =>                                          // دائرتا الطبخ
-            out.push(cyl(0.08, 0.08, 0.004, MAT.dark, R.mx + cabW * 0.05 + dx, 0.938, backZ, 24)));
+        // المغسلة والخلاط، سطح الطبخ، الميكروويف، الغلاية
+        const sinkX = cabX - cabL * 0.28;
+        const hobX = cabX + cabL * 0.12;
+        g.add(box(0.5, 0.012, 0.38, MAT.steel, sinkX, 0.93, 0.32));
+        g.add(cyl(0.015, 0.015, 0.3, MAT.steel, sinkX, 1.07, 0.1, 12));
+        g.add(box(0.03, 0.03, 0.18, MAT.steel, sinkX, 1.21, 0.18));
+        g.add(rbox(0.46, 0.012, 0.34, 0.004, MAT.screenOff, hobX, 0.93, 0.32));
+        [-0.12, 0.12].forEach((dx) => g.add(cyl(0.08, 0.08, 0.004, MAT.dark, hobX + dx, 0.938, 0.32, 24)));
+        g.add(rbox(0.5, 0.3, 0.36, 0.02, MAT.white, cabX + cabL / 2 - 0.3, 1.08, 0.24));
+        g.add(box(0.3, 0.2, 0.005, MAT.screenOff, cabX + cabL / 2 - 0.32, 1.08, 0.421));
+        g.add(cyl(0.07, 0.08, 0.2, MAT.steel, sinkX - 0.4, 0.98, 0.2, 20));
 
-        return out;
+        // رف مفتوح وشفاط فوق سطح الطبخ — الجدار الداخلي مقطوع عند 1.5 م تقريباً
+        g.add(rbox(cabL * 0.7, 0.03, 0.24, 0.01, MAT.walnut, cabX - cabL * 0.1, 1.38, 0.12));
+        [[-0.2, 0.09], [0, 0.12], [0.18, 0.08]].forEach(([dx, h]) =>
+            g.add(cyl(0.045, 0.045, h, MAT.ceramic, sinkX + 0.2 + dx, 1.395 + h / 2, 0.12, 16)));
+        g.add(rbox(0.5, 0.12, 0.34, 0.02, MAT.steel, hobX, 1.42, 0.17));
+
+        // ثلاجة بمقبض عند طرف الكف
+        g.add(rbox(0.6, 1.45, 0.6, 0.02, MAT.white, fridgeX, 0.73, 0.31));
+        g.add(box(0.02, 0.4, 0.03, MAT.steel, fridgeX - 0.24, 0.95, 0.625));
+        g.add(box(0.56, 0.005, 0.005, MAT.dark, fridgeX, 1.0, 0.612));
+
+        // سجادة أمام الكف
+        g.add(rbox(Math.min(1.6, cabL), 0.02, 0.7, 0.008, MAT.rug, cabX, 0.05, 1.05));
+
+        /* تثبيت المجموعة على وجه الجدار: الإدارة تجعل الوجه (+z المحلي) نحو داخل المطبخ،
+           والكف يبدأ من الركن الشمالي أو الغربي */
+        if (f === 'west') {
+            g.rotation.y = Math.PI / 2;                       // +z المحلي → +x (نحو الشرق)، والثلاجة في الركن الشمالي
+            g.position.set(R.x0 + half, 0, R.z0 + half + run / 2 + 0.02);
+        } else if (f === 'east') {
+            g.rotation.y = -Math.PI / 2;
+            g.position.set(R.x0 + R.w - half, 0, R.z0 + half + run / 2 + 0.02);
+        } else if (f === 'south') {
+            g.rotation.y = Math.PI;
+            g.position.set(R.x0 + half + run / 2 + 0.02, 0, R.z0 + R.d - half);
+        } else {
+            g.position.set(R.x0 + half + run / 2 + 0.02, 0, R.z0 + half);
+        }
+        return [g];
     },
 
     bath(R) {
