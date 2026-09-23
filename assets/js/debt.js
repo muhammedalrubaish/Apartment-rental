@@ -795,6 +795,9 @@ const VIEW_TITLES = {
     calc: ['حاسبة العمولة', 'تقدير حجز قبل حصوله']
 };
 
+/* تاريخ اليوم المعروض في الترويسة */
+const TODAY_LABEL = new Date().toLocaleDateString('ar-SA-u-ca-gregory', { weekday: 'long', day: 'numeric', month: 'long' });
+
 function showView(name, fromHash) {
     const views = document.querySelectorAll('.view');
     const exists = Array.from(views).some(v => v.dataset.view === name);
@@ -809,7 +812,8 @@ function showView(name, fromHash) {
     const t = VIEW_TITLES[name];
     if (t) {
         const title = document.querySelector('.tb-title');
-        if (title) title.innerHTML = `${t[0]}<span>${t[1]}</span>`;
+        // تاريخ اليوم يبقى في سطر العنوان الفرعي مع كل تبديل للصفحة
+        if (title) title.innerHTML = `${t[0]}<span>${t[1]} • <b id="today-chip">${esc(TODAY_LABEL)}</b></span>`;
     }
 
     if (!fromHash) location.hash = name;
@@ -913,9 +917,7 @@ function initApp() {
     });
 
     /* تاريخ اليوم في الشريط العلوي */
-    const today = new Date();
-    setText('today-chip', '📅 ' + today.toLocaleDateString('ar-SA-u-ca-gregory',
-        { weekday: 'long', day: 'numeric', month: 'long' }));
+    setText('today-chip', TODAY_LABEL);
 
     /* التنقل بين صفحات اللوحة */
     const sidebar = document.getElementById('sidebar');
@@ -956,11 +958,14 @@ function initApp() {
         recalc();
     });
 
-    document.getElementById('btn-lock').addEventListener('click', () => {
+    const lockPage = () => {
         sessionStorage.removeItem(SESSION_KEY);
         if (window.OwnerGate) window.OwnerGate.lock();
         location.reload();
-    });
+    };
+    document.getElementById('btn-lock').addEventListener('click', lockPage);
+    // أيقونة القفل في الترويسة تؤدي عمل «قفل الصفحة» نفسه في القائمة الجانبية
+    document.getElementById('tb-lock')?.addEventListener('click', lockPage);
 
     recalc();
     syncFromSupabase();
