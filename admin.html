@@ -153,6 +153,16 @@
         <section class="view active" id="view-dashboard">
             <div class="grid grid-kpi" id="kpi-zone"></div>
 
+            <!-- تقييمات الضيوف من الموقع: المعلّق أولاً للاعتماد أو الحذف (الهجرة 0009) -->
+            <div class="card" id="reviews-card" hidden>
+                <div class="card-head">
+                    <h2>تقييمات الضيوف</h2>
+                    <span class="tag tag-warn" id="reviews-pending-tag" hidden></span>
+                    <span class="sub" id="reviews-avg-lbl" style="margin-inline-start:auto"></span>
+                </div>
+                <div id="reviews-zone"></div>
+            </div>
+
             <div class="card">
                 <div class="card-head">
                     <h2>إيرادات السنة</h2>

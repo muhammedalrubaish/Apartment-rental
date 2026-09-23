@@ -2395,3 +2395,109 @@ body.chat-open .floating-wa { display: none; }
     transform: translate(-50%, -50%);
 }
 .apt3d-section.is-walk .apt3d-canvas { cursor: crosshair; }
+
+/* ==========================================================
+   تقييمات الضيوف (أسفل الصفحة)
+   ========================================================== */
+.reviews-section { margin-top: 8px; }
+
+.reviews-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.reviews-summary[hidden] { display: none; }
+.reviews-summary b { font-size: 34px; font-weight: 900; color: var(--primary-dark); line-height: 1; }
+.reviews-summary small { font-size: 13px; color: var(--text-muted); font-weight: 700; }
+
+.stars-static { display: inline-flex; gap: 2px; direction: ltr; }
+.stars-static i { display: inline-flex; }
+.stars-static svg { width: 16px; height: 16px; fill: #e5e7eb; stroke: none; }
+.stars-static i.on svg { fill: #f59e0b; }
+.reviews-summary .stars-static svg { width: 20px; height: 20px; }
+
+.reviews-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.reviews-empty { grid-column: 1 / -1; text-align: center; color: var(--text-muted); font-weight: 700; padding: 8px 0; }
+
+.review-card {
+    background: var(--glass-bg-strong, rgba(255, 255, 255, 0.8));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+}
+.review-card[hidden] { display: none; }
+.review-card header { display: flex; align-items: center; gap: 10px; }
+.review-card header > div { flex: 1; min-width: 0; }
+.review-card header b { display: block; font-size: 14px; font-weight: 800; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-card header small { font-size: 11.5px; color: var(--text-muted); }
+.review-card p { margin-top: 10px; font-size: 13.5px; line-height: 1.8; color: var(--text-main); text-align: justify; text-align-last: start; }
+.review-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: grid; place-items: center; flex-shrink: 0;
+    background: var(--primary-light); color: var(--primary-dark);
+    font-weight: 900; font-size: 15px;
+}
+
+.reviews-more {
+    grid-column: 1 / -1;
+    justify-self: center;
+    font-family: inherit; font-weight: 800; font-size: 13.5px;
+    color: var(--primary-dark);
+    background: var(--primary-light);
+    border: 1px solid rgba(242, 98, 42, 0.35);
+    border-radius: 999px;
+    padding: 9px 20px;
+    cursor: pointer;
+}
+
+.review-form {
+    border-top: 1px solid var(--border);
+    padding-top: 18px;
+    max-width: 520px;
+    margin-inline: auto;
+}
+.review-form h4 { text-align: center; font-size: 16px; font-weight: 800; color: var(--text-main); margin-bottom: 10px; }
+
+/* النجوم: الأولى يميناً في العربية كما يُقرأ التقييم */
+.star-picker { display: flex; justify-content: center; gap: 6px; }
+.star-picker button {
+    background: none; border: 0; padding: 4px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform .15s ease;
+}
+.star-picker button:active { transform: scale(0.88); }
+.star-picker svg { width: 38px; height: 38px; fill: #e5e7eb; stroke: #d1d5db; stroke-width: 1; transition: fill .15s ease; }
+.star-picker button.on svg { fill: #f59e0b; stroke: #f59e0b; }
+.star-picker button:focus-visible { outline: 2px solid var(--primary); border-radius: 8px; }
+.star-label { text-align: center; font-size: 13px; font-weight: 700; color: var(--text-muted); margin: 4px 0 14px; min-height: 18px; }
+.star-label.picked { color: #b45309; }
+
+.review-hp { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; inset-inline-start: -9999px; }
+
+.review-msg { border-radius: 10px; padding: 10px 12px; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; text-align: center; }
+.review-msg[hidden] { display: none; }
+.review-msg.ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.review-msg.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+
+.btn-review {
+    width: 100%;
+    font-family: inherit; font-size: 15px; font-weight: 800;
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    border: 0; border-radius: 999px;
+    padding: 13px;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(242, 98, 42, 0.25);
+}
+.btn-review:disabled { opacity: .6; cursor: wait; }
+
+@media (max-width: 560px) {
+    .reviews-list { grid-template-columns: 1fr; }
+    .star-picker svg { width: 34px; height: 34px; }
+}

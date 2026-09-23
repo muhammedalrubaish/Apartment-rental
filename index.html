@@ -410,6 +410,48 @@
             </div>
         </div>
 
+        <!-- تقييمات الضيوف: تُحفظ في Supabase وتظهر بعد اعتماد المالك (انظر الهجرة 0009) -->
+        <section class="card-section reviews-section" id="reviews">
+            <h3 class="card-title"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.6l6-.9z"/></svg> تقييمات الضيوف</h3>
+
+            <div class="reviews-summary" id="reviews-summary" hidden>
+                <b id="reviews-avg">5.0</b>
+                <span class="stars-static" id="reviews-avg-stars" aria-hidden="true"></span>
+                <small id="reviews-count"></small>
+            </div>
+
+            <div class="reviews-list" id="reviews-list">
+                <p class="reviews-empty" id="reviews-empty">كن أول من يقيّم إقامته ✨</p>
+            </div>
+
+            <form class="review-form" id="review-form" novalidate>
+                <h4>شاركنا تجربتك</h4>
+
+                <div class="star-picker" id="star-picker" role="radiogroup" aria-label="التقييم من 5 نجوم">
+                    <button type="button" role="radio" aria-checked="false" data-v="1" aria-label="نجمة واحدة"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.6l6-.9z"/></svg></button>
+                    <button type="button" role="radio" aria-checked="false" data-v="2" aria-label="نجمتان"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.6l6-.9z"/></svg></button>
+                    <button type="button" role="radio" aria-checked="false" data-v="3" aria-label="3 نجوم"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.6l6-.9z"/></svg></button>
+                    <button type="button" role="radio" aria-checked="false" data-v="4" aria-label="4 نجوم"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.6l6-.9z"/></svg></button>
+                    <button type="button" role="radio" aria-checked="false" data-v="5" aria-label="5 نجوم"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.6l6-.9z"/></svg></button>
+                </div>
+                <div class="star-label" id="star-label">اختر تقييمك</div>
+
+                <div class="form-group">
+                    <label for="review-name">الاسم الثنائي</label>
+                    <input type="text" id="review-name" class="form-control" maxlength="60" autocomplete="name" placeholder="مثال: عبدالله الأحمد">
+                </div>
+                <div class="form-group">
+                    <label for="review-comment">تعليقك <span style="font-weight:600;opacity:.75">(اختياري)</span></label>
+                    <textarea id="review-comment" class="form-control" rows="3" maxlength="500" placeholder="كيف كانت إقامتك؟" style="resize:vertical;min-height:70px"></textarea>
+                </div>
+                <!-- حقل فخ للروبوتات: مخفي عن البشر -->
+                <input type="text" id="review-hp" class="review-hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+                <div class="review-msg" id="review-msg" role="status" hidden></div>
+                <button type="submit" class="btn-review" id="review-submit">إرسال التقييم</button>
+            </form>
+        </section>
+
     </div>
 
     <!-- Site Footer -->
@@ -463,6 +505,7 @@
     <script src="assets/vendor/supabase/supabase.js"></script>
     <script src="assets/js/supabase-config.js"></script>
     <script src="assets/js/chat.js"></script>
+    <script src="assets/js/reviews.js"></script>
     <script type="module" src="assets/js/apartment3d.js"></script>
 </body>
 </html>

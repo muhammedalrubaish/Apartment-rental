@@ -1582,6 +1582,85 @@
         });
     }
 
+    /* ---------------------------------------------------------------------
+       تقييمات الضيوف (public.reviews — الهجرة 0009)
+       التقييم الجديد لا يظهر في الموقع حتى يعتمده المالك من هنا.
+       --------------------------------------------------------------------- */
+    let reviews = [];
+
+    async function loadReviews() {
+        const client = sbc();
+        if (!client) return;
+        try {
+            const { data, error } = await client
+                .from('reviews')
+                .select('id,name,rating,comment,approved,created_at')
+                .order('created_at', { ascending: false })
+                .limit(200);
+            // الجدول غير موجود قبل تطبيق الهجرة — لا نزعج المالك برسالة خطأ
+            if (error) { console.warn('[reviews] تعذّر تحميل التقييمات:', error); return; }
+            reviews = data || [];
+            renderReviews();
+        } catch (e) {
+            console.warn('[reviews] تعذّر تحميل التقييمات:', e);
+        }
+    }
+
+    function renderReviews() {
+        const card = $('#reviews-card');
+        if (!card) return;
+        card.hidden = !reviews.length;
+        if (!reviews.length) return;
+
+        const pending = reviews.filter((r) => !r.approved);
+        const approved = reviews.filter((r) => r.approved);
+        const tag = $('#reviews-pending-tag');
+        tag.hidden = !pending.length;
+        tag.textContent = `${pending.length} بانتظار الاعتماد`;
+        $('#reviews-avg-lbl').textContent = approved.length
+            ? `المتوسط المنشور ${(approved.reduce((s, r) => s + r.rating, 0) / approved.length).toFixed(1)} ★ من ${approved.length}`
+            : 'لا تقييمات منشورة بعد';
+
+        const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+        // المعلّق أولاً، ثم آخر 10 منشورة
+        $('#reviews-zone').innerHTML = pending.concat(approved.slice(0, 10)).map((r) => `
+            <div class="list-item">
+                <div class="li-icon" style="color:#f59e0b;font-size:13px;width:auto;padding:0 8px;direction:ltr">${stars(r.rating)}</div>
+                <div class="li-body">
+                    <h4>${escapeHtml(r.name)} ${r.approved ? '<span class="tag tag-ok">منشور</span>' : '<span class="tag tag-warn">معلّق</span>'}</h4>
+                    <p>${r.comment ? escapeHtml(r.comment) : '<i>بدون تعليق</i>'} · ${relTime(r.created_at)}</p>
+                </div>
+                <div class="li-side">
+                    ${r.approved
+                        ? `<button class="btn btn-ghost btn-sm" data-rv-hide="${r.id}">إخفاء</button>`
+                        : `<button class="btn btn-primary btn-sm" data-rv-ok="${r.id}">اعتماد</button>`}
+                    <button class="btn btn-ghost btn-sm" data-rv-del="${r.id}" style="color:var(--danger)">حذف</button>
+                </div>
+            </div>`).join('');
+
+        const act = async (id, fn, okMsg) => {
+            const client = sbc();
+            if (!client) return;
+            try {
+                const { error } = await fn(client.from('reviews'), id);
+                if (error) throw error;
+                toast(okMsg);
+                loadReviews();
+            } catch (e) {
+                console.error('[reviews]', e);
+                toast(dbErrorMessage(e, 'تعذّر تحديث التقييم'), true);
+            }
+        };
+        $$('[data-rv-ok]').forEach((b) => b.addEventListener('click', () =>
+            act(b.dataset.rvOk, (t, id) => t.update({ approved: true }).eq('id', id), 'نُشر التقييم في الموقع')));
+        $$('[data-rv-hide]').forEach((b) => b.addEventListener('click', () =>
+            act(b.dataset.rvHide, (t, id) => t.update({ approved: false }).eq('id', id), 'أُخفي التقييم من الموقع')));
+        $$('[data-rv-del]').forEach((b) => b.addEventListener('click', () => {
+            if (!confirm('حذف هذا التقييم نهائياً؟')) return;
+            act(b.dataset.rvDel, (t, id) => t.delete().eq('id', id), 'حُذف التقييم');
+        }));
+    }
+
     async function loadBookings() {
         const client = sbc();
         if (!client) return;
@@ -3652,6 +3731,7 @@
 
         loadBookings();            // تحميل الحجوزات الحقيقية من Supabase
         loadExpenses();            // تحميل المصاريف الحقيقية من Supabase
+        loadReviews();             // تقييمات الضيوف بانتظار الاعتماد
         startMessagesRealtime();   // بث لحظي: رسائل الزوار الجديدة تصل بلا تحديث
 
         // جهات الاتصال أولاً، حتى تتم مقارنة التكرار قبل مزامنتها من المحادثات
