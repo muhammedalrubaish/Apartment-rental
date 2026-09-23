@@ -442,6 +442,8 @@ td.dim { color: var(--text-dim); font-weight: 500; }
     --cal-gap: 5px;
     --cal-pad: 6px;
     gap: var(--cal-gap);
+    /* position: relative ليكون التقويم كتلة احتواء لأشرطة الحجز المطلقة */
+    position: relative;
 }
 
 .cal-dow {
@@ -480,44 +482,40 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 .cal-day.booked { background: var(--brand-soft); border-color: var(--brand-line); }
 .cal-day.blocked { background: var(--surface-3); }
 
-.cal-pill {
-    font-size: 9.5px;
-    font-weight: 700;
-    min-height: 15px;
-    line-height: 11px;
-    padding: 2px 5px;
-    border-radius: 5px;
+/* شريط الحجز المتصل (أسلوب Airbnb): عنصر مطلق التموضع داخل الشبكة، وكتلة
+   احتوائه هي مساحة الشبكة المحددة بـ grid-row/grid-column، فيمتد بلا انقطاع
+   فوق الفجوات بين الخلايا. لا يستقبل النقر كي يصل النقر إلى خلية اليوم.
+   --cell = عرض خلية واحدة داخل مساحة الشريط (المساحة تشمل الفجوات بين الأعمدة).
+   z-index يرفع الشريط فوق خلفية الخلايا فيبدو متصلاً. */
+.cal-bar {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+    inset-inline: 0;
+    bottom: var(--cal-pad, 6px);
+    height: 17px;
+    --cell: calc((100% - (var(--span, 1) - 1) * var(--cal-gap, 5px)) / var(--span, 1));
     background: var(--brand);
     color: #fff;
+    border-radius: 9px;
+    padding: 0 7px;
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 17px;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    /* z-index يرفع الشريط فوق خلفية الخلية المجاورة فيبدو متصلاً */
-    position: relative;
-    z-index: 2;
 }
 
-/* امتداد الشريط للحجز الممتد أكثر من يوم:
-   المسافة بين محتوى خليتين = حشو + إطار + فجوة + إطار + حشو، ونصفها لكل جهة */
-.cal-pill.cont-start,
-.cal-pill.cont-end {
-    --cal-bridge: calc(var(--cal-pad, 6px) + 1px + (var(--cal-gap, 5px) / 2));
-}
+/* يبدأ من منتصف يوم الوصول وينتهي عند منتصف يوم المغادرة؛ ما عدا ذلك يصل
+   إلى حافة الصف بلا استدارة لأنه مستمر في الصف التالي أو السابق */
+.cal-bar.from-checkin { inset-inline-start: calc(var(--cell) / 2); }
+.cal-bar.to-checkout { inset-inline-end: calc(var(--cell) / 2); }
+.cal-bar:not(.from-checkin) { border-start-start-radius: 0; border-end-start-radius: 0; }
+.cal-bar:not(.to-checkout) { border-start-end-radius: 0; border-end-end-radius: 0; }
 
-.cal-pill.cont-start {
-    margin-inline-start: calc(-1 * var(--cal-bridge));
-    border-start-start-radius: 0;
-    border-end-start-radius: 0;
-}
-
-.cal-pill.cont-end {
-    margin-inline-end: calc(-1 * var(--cal-bridge));
-    border-start-end-radius: 0;
-    border-end-end-radius: 0;
-}
-
-.cal-pill.ext { background: var(--info); }
-.cal-pill.block { background: var(--muted); }
+.cal-bar.ext { background: var(--info); }
+.cal-bar.block { background: var(--muted); }
 /* شاشة التقويم منقسمة: التقويم أعرض وحجوزات الشهر بجانبه، وتنطبق على عمود
    واحد في الشاشات الضيقة. align-items: start يمنع تمدد البطاقة الأقصر */
 .cal-split { grid-template-columns: minmax(0, 1fr); }

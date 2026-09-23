@@ -1046,33 +1046,49 @@
             if (dayIso === today) cls.push('today');
             if (b) cls.push(b.status === 'blocked' ? 'blocked' : 'booked');
 
-            let pill = '';
-            if (b) {
-                const pcls = [b.status === 'blocked' ? 'block' : (b.source === 'direct' ? '' : 'ext')];
-
-                /* شريط الحجز يُوصَل عبر الأيام المتتالية: يمتد نحو اليوم السابق
-                   واللاحق ما داما ضمن الحجز نفسه وضمن صف الأسبوع ذاته.
-                   col = عمود اليوم في الصف (0 = أول يوم في الأسبوع). */
-                const col = (lead + d - 1) % 7;
-                const prev = bookingOn(addDays(dayIso, -1));
-                const next = bookingOn(addDays(dayIso, 1));
-                const contPrev = !!prev && prev.id === b.id;
-                const contNext = !!next && next.id === b.id;
-
-                // لا يمتد الشريط خارج شبكة الشهر ولو كان الحجز عابراً لحدّ الشهر
-                if (contPrev && col > 0 && d > 1) pcls.push('cont-start');
-                if (contNext && col < 6 && d < daysInMonth) pcls.push('cont-end');
-
-                // الاسم يُكتب مرة واحدة: عند بداية الحجز أو بداية صف أسبوع أو بداية الشهر
-                const label = (!contPrev || col === 0 || d === 1) ? escapeHtml(b.guest) : '';
-                pill = `<span class="cal-pill ${pcls.join(' ')}" title="${escapeHtml(b.guest)}">${label}</span>`;
-            }
-
             const hj = state.settings.hijri ? `<span style="font-size:9px;color:var(--muted)">${hijri(dayIso)}</span>` : '';
             html += `<button class="${cls.join(' ')}" data-day="${dayIso}">
-                        <span class="d-num">${d}</span>${hj}${pill}
+                        <span class="d-num">${d}</span>${hj}
                      </button>`;
         }
+
+        /* شريط الحجز (بأسلوب Airbnb): عنصر واحد متصل لكل حجز في كل صف أسبوع،
+           يُرسم فوق الشبكة بتموضع مطلق على مساحة الشبكة (grid-area) فيعبر
+           الفجوات بين الخلايا بلا انقطاع.
+           - يبدأ من منتصف يوم الوصول وينتهي عند منتصف يوم المغادرة، فحجزان
+             متعاقبان يلتقيان في منتصف يوم التسليم.
+           - الاسم يُكتب مرة واحدة عند بداية الحجز، ويُعاد فقط إذا بدأ شهر جديد
+             والحجز مستمر من الشهر السابق. الامتداد بين الصفوف بلا اسم. */
+        const firstIso = iso(new Date(y, m, 1));
+        const lastIso = iso(new Date(y, m, daysInMonth));
+        const bars = [];
+        state.bookings
+            .filter((b) => b.status !== 'cancelled' && b.checkin <= lastIso && b.checkout >= firstIso)
+            .forEach((b) => {
+                const kind = b.status === 'blocked' ? 'block' : (b.source === 'direct' ? '' : 'ext');
+                let seg = null;
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dayIso = iso(new Date(y, m, d));
+                    if (dayIso < b.checkin || dayIso > b.checkout) continue;
+                    const row = Math.floor((lead + d - 1) / 7) + 1;
+                    const col = ((lead + d - 1) % 7) + 1;
+                    if (seg && seg.row === row) { seg.endCol = col; seg.endIso = dayIso; continue; }
+                    if (seg) bars.push(seg);
+                    seg = { b, kind, row, startCol: col, endCol: col, startIso: dayIso, endIso: dayIso, startD: d };
+                }
+                if (seg) bars.push(seg);
+            });
+
+        html += bars.map((s) => {
+            const span = s.endCol - s.startCol + 1;
+            const fromIn = s.startIso === s.b.checkin;      // يبدأ من منتصف يوم الوصول
+            const toOut = s.endIso === s.b.checkout;        // ينتهي عند منتصف يوم المغادرة
+            const stubOnly = fromIn === false && toOut && span === 1;   // نصف يوم مغادرة فقط
+            const label = !stubOnly && (fromIn || s.startD === 1) ? escapeHtml(s.b.guest) : '';
+            const cls = ['cal-bar', s.kind, fromIn ? 'from-checkin' : '', toOut ? 'to-checkout' : ''].filter(Boolean);
+            // للعناصر المطلقة داخل الشبكة يجب تحديد خطّي البداية والنهاية صراحةً — span يُعامل كـ auto
+            return `<span class="${cls.join(' ')}" style="grid-row:${s.row} / ${s.row + 1};grid-column:${s.startCol} / ${s.endCol + 1};--span:${span}" title="${escapeHtml(s.b.guest)}">${label}</span>`;
+        }).join('');
 
         $('#cal-grid').innerHTML = html;
         $$('[data-day]', $('#cal-grid')).forEach((el) => {
