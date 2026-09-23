@@ -373,6 +373,10 @@ body::before {
 .title-card.title-airbnb .title-platform-badge,
 .title-card.title-airbnb .title-platform-badge .ico { color: #c81e4b; }
 
+/* اسم الشقة بلون هوية منصته (خط كبير عريض، فالتباين كافٍ للقراءة) */
+.title-card.title-gathern h2 { color: #6d28d9; }
+.title-card.title-airbnb h2 { color: #e61e4d; }
+
 .title-platform-badge {
     font-size: 12px;
     font-weight: 700;
