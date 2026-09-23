@@ -514,8 +514,19 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 .cal-bar:not(.from-checkin) { border-start-start-radius: 0; border-end-start-radius: 0; }
 .cal-bar:not(.to-checkout) { border-start-end-radius: 0; border-end-end-radius: 0; }
 
-.cal-bar.ext { background: var(--info); }
-.cal-bar.block { background: var(--muted); }
+/* لون الشريط بحسب مصدر الحجز — هوية كل منصة:
+   الموقع برتقالي (هويتنا)، جاذر إن بنفسجي، Airbnb أحمر مرجاني، واتساب أخضر، الحجب أزرق */
+:root {
+    --src-gathern: #6d28d9;
+    --src-airbnb: #ff5a5f;
+    --src-whatsapp: #25d366;
+    --src-block: #2563eb;
+}
+.cal-bar.src-gathern { background: var(--src-gathern); }
+.cal-bar.src-airbnb { background: var(--src-airbnb); }
+.cal-bar.src-whatsapp { background: var(--src-whatsapp); }
+.cal-bar.src-block { background: var(--src-block); }
+.cal-bar.src-ical { background: var(--muted); }
 /* شاشة التقويم منقسمة: التقويم أعرض وحجوزات الشهر بجانبه، وتنطبق على عمود
    واحد في الشاشات الضيقة. align-items: start يمنع تمدد البطاقة الأقصر */
 .cal-split { grid-template-columns: minmax(0, 1fr); }

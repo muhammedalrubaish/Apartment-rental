@@ -1065,7 +1065,8 @@
         state.bookings
             .filter((b) => b.status !== 'cancelled' && b.checkin <= lastIso && b.checkout >= firstIso)
             .forEach((b) => {
-                const kind = b.status === 'blocked' ? 'block' : (b.source === 'direct' ? '' : 'ext');
+                // صنف اللون بحسب المصدر (انظر .cal-bar.src-* في CSS) — الافتراضي برتقالي الموقع
+                const kind = b.status === 'blocked' || b.source === 'block' ? 'src-block' : `src-${b.source || 'direct'}`;
                 let seg = null;
                 for (let d = 1; d <= daysInMonth; d++) {
                     const dayIso = iso(new Date(y, m, d));
