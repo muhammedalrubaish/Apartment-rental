@@ -1261,14 +1261,20 @@ function buildApartment(scene, plan) {
         pivot.userData.swing = o.swing === 'ccw' ? 1 : -1;
         pivot.userData.lock = o.lock === 'smart' ? 'smart' : 'lever';
 
+        let leaf;
         if (o.axis === 'x') {
             pivot.position.set(cx(Math.min(o.from, o.to)), 0, cz(o.at));
-            pivot.add(box(len * 0.97, dh, 0.06, MAT.wood, len / 2, dh / 2, 0));
+            leaf = box(len * 0.97, dh, 0.06, MAT.wood, len / 2, dh / 2, 0);
         } else {
             pivot.position.set(cx(o.at), 0, cz(Math.min(o.from, o.to)));
-            pivot.add(box(0.06, dh, len * 0.97, MAT.wood, 0, dh / 2, len / 2));
+            leaf = box(0.06, dh, len * 0.97, MAT.wood, 0, dh / 2, len / 2);
         }
+        pivot.add(leaf);
         addHandle(pivot, o.axis, pivot.userData.lock, len, dh);
+        // وضع التجوّل يمدّ الضلفة حتى السقف ويرفع المقابض لارتفاعها الطبيعي
+        pivot.userData.leaf = leaf;
+        pivot.userData.baseH = dh;
+        pivot.children.forEach((c) => { c.userData.baseY = c.position.y; });
 
         scene.add(pivot);
         doors.push(pivot);
@@ -1680,6 +1686,7 @@ function init(container, plan) {
        - الجدران ترتفع حتى السقف ويظهر سقف، وتُفتح الأبواب، ولا يمكن اختراق الجدران.
        - الضغط على الباب أو التلفزيون أو الحنفية يعمل كالمعتاد، وأزرار الغرف تنقلك إليها. */
     const EYE = 1.6, SPEED = 1.5, BODY = 0.22;
+    const HANDLE_Y = 1.0;   // ارتفاع مقبض الباب عن الأرض أثناء التجوّل
     const walk = { on: false, yaw: 0, pitch: 0, keys: new Set(), joy: null, look: null, move: { x: 0, y: 0 }, openedFull: false, prevRotate: true };
     const walkBtn = document.getElementById('apt3d-walk');
     const joyEl = document.getElementById('apt3d-joy');
@@ -1697,6 +1704,17 @@ function init(container, plan) {
             const h = full ? H : m.userData.baseH;
             m.scale.y = h / m.userData.baseH;
             m.position.y = h / 2;
+        });
+        /* الأبواب في المجسم المقطوع قصيرة لتناسب الجدران المنخفضة؛ عند التجوّل تمتد
+           الضلفة من الأرض إلى السقف، والمقبض على ارتفاع متر تقريباً كالباب الحقيقي */
+        doors.forEach((d) => {
+            const { leaf, baseH } = d.userData;
+            if (!leaf) return;
+            const h = full ? H - 0.01 : baseH;
+            leaf.scale.y = h / baseH;
+            leaf.position.y = h / 2;
+            const dy = full ? HANDLE_Y - baseH * 0.55 : 0;
+            d.children.forEach((c) => { if (c !== leaf) c.position.y = c.userData.baseY + dy; });
         });
         ceiling.visible = full;
         scene.updateMatrixWorld(true);
@@ -1727,9 +1745,75 @@ function init(container, plan) {
         doors.forEach((d) => { if (!d.userData.open) toggleDoor(d); });
     }
 
+    /* الانتقال لغرفة: الوقوف قرب طرف الغرفة على امتدادها الأطول (الطرف الأقرب لموقعك)
+       والنظر نحو الطرف الآخر، فتظهر الغرفة كاملة بدل الوقوف في منتصفها ملاصقاً للأثاث */
+    /* باب الغرفة الذي يكشف أعمق امتداد لها عند الدخول منه: { x, z, dx, dz } في نظام المشهد */
+    function roomEntry(r) {
+        const E = 0.08;
+        let best = null;
+        (plan.openings || []).filter((o) => o.kind === 'door').forEach((o) => {
+            const lo = Math.min(o.from, o.to), hi = Math.max(o.from, o.to), mid = (lo + hi) / 2;
+            let c = null;
+            if (o.axis === 'x' && mid > r.x && mid < r.x + r.w) {
+                if (Math.abs(o.at - r.z) < E) c = { x: mid, z: o.at, dx: 0, dz: 1, depth: r.d };
+                else if (Math.abs(o.at - (r.z + r.d)) < E) c = { x: mid, z: o.at, dx: 0, dz: -1, depth: r.d };
+            } else if (o.axis === 'z' && mid > r.z && mid < r.z + r.d) {
+                if (Math.abs(o.at - r.x) < E) c = { x: o.at, z: mid, dx: 1, dz: 0, depth: r.w };
+                else if (Math.abs(o.at - (r.x + r.w)) < E) c = { x: o.at, z: mid, dx: -1, dz: 0, depth: r.w };
+            }
+            if (c && (!best || c.depth > best.depth)) best = c;
+        });
+        return best && { x: best.x - W / 2, z: best.z - D / 2, dx: best.dx, dz: best.dz, depth: best.depth };
+    }
+
     function teleport(r) {
-        const x = r.x + r.w / 2 - W / 2, z = r.z + r.d / 2 - D / 2;
-        if (!blocked(x, z)) camera.position.set(x, EYE, z);
+        // غرفة لها واجهة محددة (مثل المطبخ facing) — الوقوف أمامها على بعد مريح والنظر إليها
+        const FACE = { west: [-1, 0], east: [1, 0], north: [0, -1], south: [0, 1] }[r.facing];
+        if (FACE) {
+            const [fx, fz] = FACE;
+            const back = Math.min((fx ? r.w : r.d) - 0.4, 1.6);
+            const wx = fx < 0 ? r.x : fx > 0 ? r.x + r.w : r.x + r.w / 2;
+            const wz = fz < 0 ? r.z : fz > 0 ? r.z + r.d : r.z + r.d / 2;
+            const x = wx - fx * back - W / 2, z = wz - fz * back - D / 2;
+            if (!blocked(x, z)) {
+                camera.position.set(x, EYE, z);
+                walk.yaw = Math.atan2(-fx, -fz);
+                walk.pitch = -0.15;
+                document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => c.classList.toggle('active', c.dataset.room === r.key));
+                walkHint('📍 ' + r.name);
+                return;
+            }
+        }
+        // ثم: خطوة داخل باب الغرفة والنظر إلى داخلها — كمن يدخلها فعلاً
+        const en = roomEntry(r);
+        if (en) {
+            const step = Math.min(0.4, en.depth / 2);
+            const x = en.x + en.dx * step, z = en.z + en.dz * step;
+            if (!blocked(x, z)) {
+                camera.position.set(x, EYE, z);
+                walk.yaw = Math.atan2(-en.dx, -en.dz);
+                walk.pitch = -0.12;
+                document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => c.classList.toggle('active', c.dataset.room === r.key));
+                walkHint('📍 ' + r.name);
+                return;
+            }
+        }
+        const cxr = r.x + r.w / 2 - W / 2, czr = r.z + r.d / 2 - D / 2;
+        const alongX = r.w >= r.d;
+        const half = (alongX ? r.w : r.d) / 2;
+        const cur = alongX ? camera.position.x - cxr : camera.position.z - czr;
+        const s = cur < 0 ? -1 : 1;                      // الطرف الأقرب
+        const spots = [0.72, 0.5, 0.25, 0].map((k) => (alongX
+            ? { x: cxr + s * Math.max(0, half - 0.55) * (k / 0.72), z: czr }
+            : { x: cxr, z: czr + s * Math.max(0, half - 0.55) * (k / 0.72) }));
+        const spot = spots.find((p) => !blocked(p.x, p.z));
+        if (spot) {
+            camera.position.set(spot.x, EYE, spot.z);
+            // النظر نحو مركز الغرفة ثم ما بعده (الاتجاه الأمامي = (-sin yaw, -cos yaw))
+            const dx = alongX ? -s : 0, dz = alongX ? 0 : -s;
+            walk.yaw = Math.atan2(-dx, -dz);
+            walk.pitch = -0.08;
+        }
         document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => c.classList.toggle('active', c.dataset.room === r.key));
         walkHint('📍 ' + r.name);
     }
