@@ -19,8 +19,12 @@
 
     /* ---------- الحالة ---------- */
     let state = load();
-    let botMessages = [];      // ردود آلية محلية فقط (لا تُحفظ في القاعدة)
+    /* رسالة الترحيب والردود الآلية لا تُخزَّن في أي مكان: تُولَّد عند العرض من رسائل
+       الزائر نفسها. سابقاً كانت في الذاكرة فقط فتضيع عند إعادة تحميل الصفحة،
+       وتبدو أسئلة الزائر بلا إجابة. */
+    let pending = [];          // رسائل الزائر قيد الإرسال (عرض فوري قبل تأكيد الحفظ)
     let dbMessages = [];       // الرسائل الحقيقية القادمة من القاعدة
+    const REPLY_DELAY = 700;   // مهلة قصيرة قبل ظهور الرد الآلي لرسالة جديدة
     let pollTimer = null;
     let sending = false;
 
@@ -64,7 +68,8 @@
     /* ---------- الوقت ---------- */
     function clock(iso) {
         const d = new Date(iso);
-        return d.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+        // أرقام لاتينية كبقية أرقام الموقع
+        return d.toLocaleTimeString('ar-SA-u-nu-latn', { hour: '2-digit', minute: '2-digit' });
     }
 
     /* ---------- الردود الآلية الفورية (محلية فقط، لا تصل لقاعدة البيانات) ---------- */
@@ -189,10 +194,6 @@
                 state.phone = normalizePhone(phone.value);
                 state.conversationId = id;
                 save();
-                botMessages = [{
-                    sender: 'owner', body: `أهلاً ${cleanName.split(' ')[0]} 👋 أنا ${OWNER_NAME}، مالك الشقة. كيف أقدر أساعدك؟`,
-                    created_at: new Date().toISOString(), local: true,
-                }];
                 renderChat();
                 startPolling();
             } catch (err) {
@@ -236,12 +237,10 @@
             </div>
 
             <a class="chat-forward" id="cv-forward" target="_blank" rel="noopener" hidden>
-                📤 أرسل المحادثة للمالك على الواتساب ليصله إشعار فوري
+                📤 أرسل المحادثة للمالك عبر واتساب
             </a>
 
-            <div class="chat-quick" id="cv-quick">
-                ${QUICK.map((q) => `<button type="button">${esc(q)}</button>`).join('')}
-            </div>
+            <div class="chat-quick" id="cv-quick"></div>
 
             <div class="chat-compose">
                 <input type="text" id="cv-input" placeholder="اكتب رسالتك…" autocomplete="off">
@@ -256,9 +255,24 @@
 
         $('#cv-send').addEventListener('click', send);
         $('#cv-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
-        $('#cv-quick').querySelectorAll('button').forEach((b) => {
-            b.addEventListener('click', () => { $('#cv-input').value = b.textContent; send(); });
+        // الأسئلة السريعة: ضغطة واحدة ترسل السؤال، ثم يختفي من القائمة
+        $('#cv-quick').addEventListener('click', (e) => {
+            const b = e.target.closest('button');
+            if (!b || sending) return;
+            b.blur();
+            $('#cv-input').value = b.textContent;
+            send();
         });
+    }
+
+    /* تُعرض فقط الأسئلة التي لم يسألها الزائر بعد، ويختفي الشريط إن انتهت */
+    function renderQuick(all) {
+        const zone = $('#cv-quick');
+        if (!zone) return;
+        const asked = new Set(all.filter((m) => m.sender === 'visitor').map((m) => String(m.body).trim()));
+        const left = QUICK.filter((q) => !asked.has(q));
+        zone.innerHTML = left.map((q) => `<button type="button">${esc(q)}</button>`).join('');
+        zone.hidden = !left.length;
     }
 
     function bubble(m) {
@@ -266,16 +280,37 @@
         return `<div class="chat-msg ${mine ? 'me' : 'them'}">${esc(m.body)}<time>${clock(m.created_at)}</time></div>`;
     }
 
+    let replyTimer = null;
+
     function renderMessages() {
         const box = $('#cv-messages');
         if (!box) return;
 
-        const all = dbMessages.concat(botMessages)
+        const thread = dbMessages.concat(pending)
             .slice()
             .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
+        // الترحيب أولاً، ثم كل رسالة زائر يليها ردها الآلي إن وُجد
+        const all = [{
+            sender: 'owner', created_at: thread.length ? thread[0].created_at : new Date().toISOString(),
+            body: `أهلاً ${String(state.name || '').split(' ')[0]} 👋 أنا ${OWNER_NAME}، مالك الشقة. كيف أقدر أساعدك؟`,
+        }];
+        let waiting = false;
+        thread.forEach((m) => {
+            all.push(m);
+            if (m.sender !== 'visitor') return;
+            const reply = autoReply(m.body);
+            if (!reply) return;
+            if (Date.now() - new Date(m.created_at) < REPLY_DELAY) { waiting = true; return; }
+            all.push({ sender: 'owner', body: reply, created_at: m.created_at });
+        });
+
         box.innerHTML = all.map(bubble).join('');
+        renderQuick(all);
         scrollDown();
+
+        clearTimeout(replyTimer);
+        if (waiting) replyTimer = setTimeout(renderMessages, REPLY_DELAY);
     }
 
     function scrollDown() {
@@ -293,24 +328,13 @@
 
         // عرض فوري (متفائل) قبل تأكيد الحفظ
         const optimistic = { sender: 'visitor', body: text, created_at: new Date().toISOString(), local: true };
-        botMessages.push(optimistic);
+        pending.push(optimistic);
         renderMessages();
 
         try {
             await sendVisitorMessage(text);
-            // أزل النسخة المحلية؛ الفحص الدوري القادم سيجلبها من القاعدة
-            botMessages = botMessages.filter((m) => m !== optimistic);
             markForwardLink(text);
-
-            const reply = autoReply(text);
-            if (reply) {
-                setTimeout(() => {
-                    botMessages.push({ sender: 'owner', body: reply, created_at: new Date().toISOString(), local: true });
-                    renderMessages();
-                }, 700);
-            }
-
-            await pollOnce();
+            await pollOnce();   // يجلب الرسالة من القاعدة ويزيل نسختها المؤقتة
         } catch (err) {
             console.error('[chat] فشل إرسال الرسالة:', err);
             optimistic.body += '  ⚠️ لم تصل — جرّب الواتساب';
@@ -345,6 +369,7 @@
             const rows = await fetchThread();
             if (Array.isArray(rows)) {
                 dbMessages = rows;
+                pending = pending.filter((p) => !rows.some((m) => m.sender === 'visitor' && m.body === p.body));
                 renderMessages();
             }
         } catch (err) {
