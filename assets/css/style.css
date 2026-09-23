@@ -1700,10 +1700,18 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
     color: #fff;
 }
 
+/* أزرار المجسم موحّدة: أيقونة برتقالية على خلفية فاتحة، وعند الضغط خلفية برتقالية وأيقونة بيضاء */
+.apt3d-chip .ico { width: 18px; height: 18px; stroke-width: 2; }
 .apt3d-chip.alt {
-    color: #475569;
-    background: rgba(255, 255, 255, 0.55);
-    border-color: var(--glass-border);
+    color: var(--primary-dark);
+    background: rgba(253, 238, 231, 0.6);
+    border-color: rgba(242, 98, 42, 0.35);
+}
+.apt3d-chip:active,
+.apt3d-chip.alt.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
 }
 
 /* على الشاشات الضيقة: توزيع متساوٍ حتى يظهر الشريط كاملاً بسطر واحد دون تمرير */

@@ -31,23 +31,40 @@ const ROOM_INFO = {
 const mat = (color, opts = {}) =>
     new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05, ...opts });
 
+/* نسيج متكرر: يُكرَّر كل repeat متر تقريباً (UV الأشكال المبثوقة بوحدة المتر) */
+const tiled = (tex, rx, ry) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(rx, ry);
+    return tex;
+};
+
 const MAT = {
-    floorWood: mat(0xf1efec, { roughness: 0.18, metalness: 0.05 }),   // رخام أبيض كما في الصور
-    floorTile: mat(0xf4f3f1, { roughness: 0.16, metalness: 0.05 }),
-    floorBath: mat(0xd7e3ee, { roughness: 0.3 }),
-    wall: mat(0xdcd5cb),        // جدران بلون بيج دافئ
-    wallIn: mat(0xd3ccc2),
-    wood: mat(0x9a7d5f),
-    woodLight: mat(0xc9ad8b),
-    fabric: mat(0x76786f),      // كنب رمادي
-    fabricWarm: mat(0xe8e6df),  // وسائد فاتحة
-    white: mat(0xfafafa),
+    floorWood: mat(0xf3f1ee, { roughness: 0.3, metalness: 0.02, map: makeMarbleTexture() }),   // رخام أبيض كما في الصور
+    floorTile: mat(0xf4f3f1, { roughness: 0.3, metalness: 0.02, map: makeMarbleTexture() }),
+    floorBath: mat(0xdde6ee, { roughness: 0.28, map: makeMarbleTexture() }),
+    wall: mat(0xe4ddd3, { roughness: 0.92 }),        // جدران بلون بيج دافئ
+    wallIn: mat(0xdbd3c8, { roughness: 0.92 }),
+    wood: mat(0x8a6a4c, { roughness: 0.55, map: tiled(makeWoodTexture(), 1, 1) }),
+    woodLight: mat(0xc9ad8b, { roughness: 0.5, map: tiled(makeWoodTexture(), 1, 1) }),
+    fabric: mat(0x7a7c72, { roughness: 0.95, map: tiled(makeFabricTexture(), 3, 3) }),      // كنب رمادي
+    fabricWarm: mat(0xe8e6df, { roughness: 0.9, map: tiled(makeFabricTexture(), 3, 3) }),   // وسائد فاتحة
+    upholstery: mat(0xcfc6b8, { roughness: 0.95, map: tiled(makeFabricTexture(), 3, 3) }),  // تنجيد السرير
+    duvet: mat(0xf7f5f1, { roughness: 0.92, map: tiled(makeFabricTexture(), 4, 4) }),
+    lacquer: mat(0xefe8de, { roughness: 0.35 }),                                           // دولاب لامع كريمي
+    throwAccent: mat(0xc9774f, { roughness: 0.95, map: tiled(makeFabricTexture(), 4, 4) }), // لمسة برتقالية
+    white: mat(0xfafafa, { roughness: 0.4 }),
+    ceramic: mat(0xffffff, { roughness: 0.12, metalness: 0.02 }),
     dark: mat(0x2b3440, { roughness: 0.4 }),
+    stone: mat(0x3a3d42, { roughness: 0.22, metalness: 0.1 }),
     steel: mat(0xc0c8d0, { roughness: 0.25, metalness: 0.7 }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x9ecbe8, transparent: true, opacity: 0.32, roughness: 0.1 }),
-    screenOff: mat(0x0d1117, { roughness: 0.25, metalness: 0.3 }),
-    gold: mat(0xc9a227, { roughness: 0.25, metalness: 0.75 }),
-    slab: mat(0xb9c2cc),
+    glass: new THREE.MeshStandardMaterial({ color: 0xbfd9ea, transparent: true, opacity: 0.28, roughness: 0.05, metalness: 0.1 }),
+    screenOff: mat(0x0d1117, { roughness: 0.18, metalness: 0.4 }),
+    gold: mat(0xc9a227, { roughness: 0.25, metalness: 0.8 }),
+    slab: mat(0xc7cdd4, { roughness: 0.9 }),
+    lampShade: mat(0xfff1d6, { roughness: 0.9, emissive: 0xffc27a, emissiveIntensity: 0.9 }),
+    pot: mat(0xe9e2d6, { roughness: 0.6 }),
+    leaf: mat(0x4f7a45, { roughness: 0.7 }),
+    leafLight: mat(0x6f9a5c, { roughness: 0.7 }),
     water: new THREE.MeshStandardMaterial({
         color: 0xbfe4f5, transparent: true, opacity: 0.5,
         roughness: 0.08, metalness: 0.1,
@@ -123,6 +140,69 @@ function makeRugTexture() {
             g.fillStyle = '#e2d9c6';
             for (let x = 62; x < W - 60; x += 26) g.fillRect(x, y + 2, 12, 6);
         });
+    });
+}
+
+/* رخام أبيض بعروق رمادية خفيفة وحدود بلاط — يُكرَّر حسب مقاس كل غرفة */
+function makeMarbleTexture() {
+    return makeCanvasTexture(512, 512, (g, W, H) => {
+        g.fillStyle = '#ffffff';
+        g.fillRect(0, 0, W, H);
+        // عروق ناعمة متعرجة
+        for (let v = 0; v < 7; v++) {
+            g.strokeStyle = `rgba(150,150,155,${0.08 + Math.random() * 0.1})`;
+            g.lineWidth = 0.6 + Math.random() * 1.6;
+            g.beginPath();
+            let x = Math.random() * W, y = 0;
+            g.moveTo(x, y);
+            while (y < H) {
+                x += (Math.random() - 0.5) * 60;
+                y += 20 + Math.random() * 40;
+                g.lineTo(x, y);
+            }
+            g.stroke();
+        }
+        // فاصل البلاط
+        g.strokeStyle = 'rgba(170,165,160,0.45)';
+        g.lineWidth = 3;
+        g.strokeRect(0, 0, W, H);
+    });
+}
+
+/* عروق خشب طولية */
+function makeWoodTexture() {
+    return makeCanvasTexture(256, 256, (g, W, H) => {
+        g.fillStyle = '#d8d8d8';
+        g.fillRect(0, 0, W, H);
+        for (let i = 0; i < 70; i++) {
+            const y = Math.random() * H;
+            g.strokeStyle = `rgba(${Math.random() < 0.5 ? '90,70,50' : '255,255,255'},${0.05 + Math.random() * 0.12})`;
+            g.lineWidth = 0.5 + Math.random() * 2.2;
+            g.beginPath();
+            g.moveTo(0, y);
+            for (let x = 0; x <= W; x += 32) g.lineTo(x, y + Math.sin(x * 0.03 + i) * 3);
+            g.stroke();
+        }
+    });
+}
+
+/* نسيج قماش ناعم (يضرب في لون المادة) */
+function makeFabricTexture() {
+    return makeCanvasTexture(128, 128, (g, W, H) => {
+        g.fillStyle = '#eeeeee';
+        g.fillRect(0, 0, W, H);
+        for (let y = 0; y < H; y += 2) {
+            g.fillStyle = `rgba(0,0,0,${0.03 + Math.random() * 0.03})`;
+            g.fillRect(0, y, W, 1);
+        }
+        for (let x = 0; x < W; x += 2) {
+            g.fillStyle = `rgba(255,255,255,${0.04 + Math.random() * 0.05})`;
+            g.fillRect(x, 0, 1, H);
+        }
+        for (let i = 0; i < 900; i++) {
+            g.fillStyle = `rgba(0,0,0,${Math.random() * 0.06})`;
+            g.fillRect(Math.random() * W, Math.random() * H, 1, 1);
+        }
     });
 }
 
@@ -241,6 +321,111 @@ function box(w, h, d, material, x, y, z) {
     return m;
 }
 
+/* صندوق بحواف مستديرة — يعطي الأثاث مظهراً ناعماً واقعياً بدل الزوايا الحادة.
+   الهندسة تُخزَّن مؤقتاً حسب المقاس لتقليل استهلاك الذاكرة. */
+const RB_CACHE = new Map();
+function roundedBoxGeometry(w, h, d, r) {
+    r = Math.min(r, w / 2 - 0.002, h / 2 - 0.002, d / 2 - 0.002);
+    if (r < 0.004) return new THREE.BoxGeometry(w, h, d);
+    const key = [w, h, d, r].map((n) => n.toFixed(3)).join('|');
+    if (RB_CACHE.has(key)) return RB_CACHE.get(key);
+
+    // مستطيل داخلي بزوايا مستديرة ثم بثق بشطف مستدير بنصف القطر نفسه
+    const iw = w - 2 * r, ih = h - 2 * r, c = Math.min(iw, ih) * 0.2;
+    const s = new THREE.Shape();
+    const x0 = -iw / 2, y0 = -ih / 2;
+    s.moveTo(x0 + c, y0);
+    s.lineTo(x0 + iw - c, y0);
+    s.quadraticCurveTo(x0 + iw, y0, x0 + iw, y0 + c);
+    s.lineTo(x0 + iw, y0 + ih - c);
+    s.quadraticCurveTo(x0 + iw, y0 + ih, x0 + iw - c, y0 + ih);
+    s.lineTo(x0 + c, y0 + ih);
+    s.quadraticCurveTo(x0, y0 + ih, x0, y0 + ih - c);
+    s.lineTo(x0, y0 + c);
+    s.quadraticCurveTo(x0, y0, x0 + c, y0);
+
+    const geo = new THREE.ExtrudeGeometry(s, {
+        depth: Math.max(d - 2 * r, 0.001),
+        bevelEnabled: true, bevelThickness: r, bevelSize: r,
+        bevelSegments: 3, curveSegments: 3,
+    });
+    geo.center();
+    geo.computeVertexNormals();
+    RB_CACHE.set(key, geo);
+    return geo;
+}
+
+function rbox(w, h, d, r, material, x, y, z) {
+    const m = new THREE.Mesh(roundedBoxGeometry(w, h, d, r), material);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+}
+
+function cyl(rt, rb, h, material, x, y, z, seg = 20) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), material);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+}
+
+/* نبتة زينة في أصيص — تضيف حياة واقعية للمشهد */
+function plant(x, z, s = 1) {
+    const g = new THREE.Group();
+    g.add(cyl(0.13 * s, 0.1 * s, 0.3 * s, MAT.pot, 0, 0.15 * s, 0));
+    g.add(cyl(0.12 * s, 0.12 * s, 0.02 * s, MAT.dark, 0, 0.29 * s, 0));
+    const leafGeo = new THREE.SphereGeometry(0.1 * s, 10, 8);
+    for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2;
+        const r = (0.06 + (i % 3) * 0.04) * s;
+        const l = new THREE.Mesh(leafGeo, i % 2 ? MAT.leaf : MAT.leafLight);
+        l.scale.set(0.8, 1.5, 0.5);
+        l.position.set(Math.cos(a) * r, (0.45 + (i % 4) * 0.09) * s, Math.sin(a) * r);
+        l.rotation.set(Math.cos(a) * 0.5, a, Math.sin(a) * 0.5);
+        l.castShadow = true;
+        g.add(l);
+    }
+    g.position.set(x, 0, z);
+    return g;
+}
+
+/* أريكة واقعية: قاعدة وأرجل ووسائد مقعد وظهر منفصلة ومساند مستديرة.
+   تُبنى بالطول على المحور x ووجهها نحو +z ثم تُدار: rotY يحدد اتجاه الوجه. */
+function sofa(len, dep, seats, x, z, rotY, fabricMat = MAT.fabric) {
+    const g = new THREE.Group();
+    const arm = 0.2;
+    const inner = len - arm * 2;
+    const cw = inner / seats;
+
+    g.add(rbox(len, 0.16, dep, 0.03, fabricMat, 0, 0.14, 0));                        // القاعدة
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) =>
+        g.add(cyl(0.022, 0.016, 0.07, MAT.dark, sx * (len / 2 - 0.08), 0.035, sz * (dep / 2 - 0.08))));
+    g.add(rbox(len, 0.46, 0.16, 0.05, fabricMat, 0, 0.43, -dep / 2 + 0.08));          // هيكل الظهر
+    [-1, 1].forEach((sx) =>
+        g.add(rbox(arm, 0.44, dep, 0.07, fabricMat, sx * (len / 2 - arm / 2), 0.37, 0))); // المساند
+
+    for (let i = 0; i < seats; i++) {
+        const cx = -inner / 2 + cw * (i + 0.5);
+        g.add(rbox(cw - 0.02, 0.15, dep - 0.2, 0.06, fabricMat, cx, 0.3, 0.07));       // وسادة المقعد
+        const back = rbox(cw - 0.03, 0.4, 0.18, 0.08, fabricMat, cx, 0.56, -dep / 2 + 0.24);
+        back.rotation.x = -0.14;
+        g.add(back);                                                                   // وسادة الظهر
+    }
+
+    // وسادتا زينة بمربّعات عند الطرفين
+    [-1, 1].forEach((sx) => {
+        const p = rbox(0.38, 0.36, 0.12, 0.06, MAT.cushion, sx * (inner / 2 - 0.22), 0.55, -dep / 2 + 0.36);
+        p.rotation.set(-0.3, sx * 0.25, sx * 0.08);
+        g.add(p);
+    });
+
+    g.position.set(x, 0, z);
+    g.rotation.y = rotY;
+    return g;
+}
+
 /* ── نفّاث ماء: قطرات تتساقط داخل مجموعة مخفية حتى الضغط على الحنفية ── */
 function makeWaterJet(spread, height, x, y, z) {
     const g = new THREE.Group();
@@ -283,28 +468,63 @@ const FURNITURE = {
         const bl = Math.min(2.05, R.d * 0.62);
         const bx = R.mx;
         const bz = R.z0 + 0.25 + bl / 2;
-        const out = [
-            box(bw, 0.35, bl, MAT.wood, bx, 0.22, bz),
-            box(bw - 0.1, 0.22, bl - 0.1, MAT.white, bx, 0.5, bz),
-            box(bw, 0.75, 0.12, MAT.woodLight, bx, 0.5, bz - bl / 2),
-            box(bw * 0.32, 0.14, 0.34, MAT.white, bx - bw * 0.21, 0.66, bz - bl / 2 + 0.3),
-            box(bw * 0.32, 0.14, 0.34, MAT.white, bx + bw * 0.21, 0.66, bz - bl / 2 + 0.3),
-            box(bw - 0.1, 0.06, bl * 0.5, MAT.fabricWarm, bx, 0.62, bz + bl * 0.22),
-            // كومودينو وأباجورة على جانبَي السرير
-            box(0.45, 0.45, 0.4, MAT.white, bx + bw / 2 + 0.32, 0.26, bz - bl / 2 + 0.25),
-            box(0.18, 0.28, 0.18, MAT.fabricWarm, bx + bw / 2 + 0.32, 0.62, bz - bl / 2 + 0.25),
-            box(0.45, 0.45, 0.4, MAT.white, bx - bw / 2 - 0.32, 0.26, bz - bl / 2 + 0.25),
-            box(0.18, 0.28, 0.18, MAT.fabricWarm, bx - bw / 2 - 0.32, 0.62, bz - bl / 2 + 0.25),
-            // سجادة منقوشة أمام السرير
-            box(bw * 1.45, 0.02, Math.min(1.5, R.d * 0.34), MAT.rug, bx, 0.05, bz + bl / 2 + 0.55),
-        ];
-        // الدولاب مقابل السرير على الجدار الجنوبي، وبعيداً عن باب الدخول (الغربي)
+        const head = bz - bl / 2;
+        const out = [];
+
+        // قاعدة منجّدة بأرجل قصيرة
+        out.push(rbox(bw + 0.08, 0.28, bl + 0.04, 0.04, MAT.upholstery, bx, 0.2, bz + 0.02));
+        [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) =>
+            out.push(cyl(0.025, 0.02, 0.07, MAT.dark, bx + sx * (bw / 2 - 0.06), 0.035, bz + sz * (bl / 2 - 0.06))));
+        // مرتبة ولحاف أبيض ومفرش برتقالي عند القدمين
+        out.push(rbox(bw - 0.02, 0.2, bl - 0.06, 0.07, MAT.white, bx, 0.44, bz + 0.02));
+        out.push(rbox(bw + 0.07, 0.09, bl * 0.7, 0.04, MAT.duvet, bx, 0.57, bz + bl * 0.15));
+        out.push(rbox(bw + 0.09, 0.035, 0.44, 0.015, MAT.throwAccent, bx, 0.625, bz + bl / 2 - 0.32));
+
+        // رأس سرير منجّد بألواح عمودية
+        out.push(rbox(bw + 0.3, 1.1, 0.1, 0.03, MAT.upholstery, bx, 0.62, head - 0.03));
+        const pw = (bw + 0.2) / 4;
+        for (let i = 0; i < 4; i++) {
+            out.push(rbox(pw - 0.025, 0.82, 0.06, 0.025, MAT.fabricWarm,
+                bx - (bw + 0.2) / 2 + pw * (i + 0.5), 0.72, head + 0.03));
+        }
+
+        // مخدات كبيرة وصغيرة مائلة على رأس السرير
+        [-1, 1].forEach((sx) => {
+            const big = rbox(bw * 0.42, 0.34, 0.14, 0.07, MAT.white, bx + sx * bw * 0.23, 0.7, head + 0.14);
+            big.rotation.x = -0.35;
+            out.push(big);
+            const small = rbox(0.34, 0.28, 0.11, 0.06, MAT.upholstery, bx + sx * bw * 0.16, 0.68, head + 0.3);
+            small.rotation.set(-0.3, sx * 0.15, 0);
+            out.push(small);
+        });
+
+        // كومودينو بدرج ومقبض، وأباجورة بظل مضيء دافئ
+        [-1, 1].forEach((sx) => {
+            const nx = bx + sx * (bw / 2 + 0.36);
+            const nz = head + 0.25;
+            out.push(rbox(0.46, 0.46, 0.4, 0.02, MAT.woodLight, nx, 0.25, nz));
+            out.push(box(0.4, 0.006, 0.005, MAT.dark, nx, 0.33, nz + 0.2));
+            out.push(box(0.1, 0.018, 0.02, MAT.gold, nx, 0.4, nz + 0.21));
+            out.push(cyl(0.06, 0.075, 0.03, MAT.gold, nx, 0.495, nz));
+            out.push(cyl(0.01, 0.01, 0.26, MAT.gold, nx, 0.63, nz));
+            out.push(cyl(0.085, 0.125, 0.18, MAT.lampShade, nx, 0.82, nz, 28));
+        });
+
+        // سجادة منقوشة أمام السرير
+        out.push(rbox(bw * 1.45, 0.02, Math.min(1.5, R.d * 0.34), 0.008, MAT.rug, bx, 0.05, bz + bl / 2 + 0.55));
+
+        // الدولاب مقابل السرير على الجدار الجنوبي، بثلاثة أبواب ومقابض ذهبية
         if (R.w > 3.2) {
             const wl = Math.min(1.9, R.w * 0.44);
-            out.push(
-                box(wl, 1.95, 0.58, MAT.woodLight, R.x0 + R.w - wl / 2 - 0.35, 1.0, R.z0 + R.d - 0.35),
-                box(0.04, 1.7, 0.03, MAT.dark, R.x0 + R.w - wl - 0.28, 1.0, R.z0 + R.d - 0.64),
-            );
+            const wx = R.x0 + R.w - wl / 2 - 0.35;
+            const wz = R.z0 + R.d - 0.35;
+            const front = wz - 0.29;
+            out.push(rbox(wl, 1.95, 0.58, 0.02, MAT.lacquer, wx, 1.0, wz));
+            for (let i = 1; i < 3; i++) out.push(box(0.006, 1.85, 0.006, MAT.dark, wx - wl / 2 + (wl / 3) * i, 1.0, front - 0.002));
+            // مقبض لكل باب بجانب الفاصل الأقرب
+            [wl / 3 - 0.06, wl / 3 + 0.06, (wl * 2) / 3 + 0.06].forEach((off) =>
+                out.push(box(0.018, 0.34, 0.025, MAT.gold, wx - wl / 2 + off, 1.05, front - 0.015)));
+            out.push(plant(R.x0 + 0.45, R.z0 + R.d - 0.45, 1.1));
         }
         return out;
     },
@@ -321,45 +541,46 @@ const FURNITURE = {
         const loveZ = R.z0 + 2.62;   // الكنب الصغير مُبعد خلف السجادة، ووجهه للشاشة
 
         // شاشة التلفزيون — قابلة للتشغيل بالضغط (تفتح يوتيوب)
-        const screen = box(1.25, 0.72, 0.05, MAT.screenOff.clone(), tvX, 0.88, R.z0 + 0.22);
+        const screen = box(1.25, 0.72, 0.03, MAT.screenOff.clone(), tvX, 0.98, R.z0 + 0.235);
         screen.userData.interactive = 'tv';
-        screen.userData.tvAnchor = [tvX, 0.88, R.z0 + 0.5];
+        screen.userData.tvAnchor = [tvX, 0.98, R.z0 + 0.5];
+
+        const tableX = sofaX + inward * 0.95;
 
         return [
-            box(0.25, 0.62, sofaLen, MAT.fabric, wallX, 0.55, sofaZ),                       // ظهر الكنب
-            box(0.92, 0.42, sofaLen, MAT.fabric, sofaX, 0.26, sofaZ),                        // المقعد
-            box(0.92, 0.5, 0.24, MAT.fabric, sofaX, 0.5, sofaZ - sofaLen / 2),
-            box(0.92, 0.5, 0.24, MAT.fabric, sofaX, 0.5, sofaZ + sofaLen / 2),
-            box(0.42, 0.16, 0.42, MAT.cushion, sofaX, 0.55, sofaZ - sofaLen * 0.26),
-            box(0.42, 0.16, 0.42, MAT.cushion, sofaX, 0.55, sofaZ + sofaLen * 0.26),
+            // الأريكة الرئيسية بثلاثة مقاعد، ظهرها للجدار ووجهها لداخل الصالة
+            sofa(sofaLen, 0.95, 3, wallX + inward * 0.5, sofaZ, inward * Math.PI / 2),
 
-            box(0.66, 0.04, 1.1, MAT.glass, sofaX + inward * 0.95, 0.44, sofaZ),              // طاولة قهوة زجاجية
-            box(0.09, 0.36, 0.09, MAT.gold, sofaX + inward * 0.72, 0.2, sofaZ - 0.4),
-            box(0.09, 0.36, 0.09, MAT.gold, sofaX + inward * 1.18, 0.2, sofaZ - 0.4),
-            box(0.09, 0.36, 0.09, MAT.gold, sofaX + inward * 0.72, 0.2, sofaZ + 0.4),
-            box(0.09, 0.36, 0.09, MAT.gold, sofaX + inward * 1.18, 0.2, sofaZ + 0.4),
+            // طاولة قهوة: سطح زجاجي مستدير الحواف وأرجل ذهبية رفيعة
+            rbox(0.66, 0.035, 1.1, 0.015, MAT.glass, tableX, 0.44, sofaZ),
+            ...[[-0.25, -0.45], [0.25, -0.45], [-0.25, 0.45], [0.25, 0.45]].map(([dx, dz]) =>
+                cyl(0.014, 0.014, 0.42, MAT.gold, tableX + dx, 0.21, sofaZ + dz, 12)),
+            rbox(0.3, 0.05, 0.22, 0.01, MAT.woodLight, tableX, 0.48, sofaZ - 0.15),        // كتب
+            cyl(0.05, 0.04, 0.16, MAT.ceramic, tableX, 0.54, sofaZ + 0.25, 18),              // مزهرية
 
-            box(R.w * 0.62, 0.02, R.d * 0.6, MAT.rug, R.mx, 0.05, sofaZ),                     // سجادة
+            rbox(R.w * 0.62, 0.02, R.d * 0.6, 0.008, MAT.rug, R.mx, 0.05, sofaZ),            // سجادة
 
-            box(1.35, 0.42, 0.34, MAT.woodLight, tvX, 0.24, R.z0 + 0.3),                      // طاولة التلفزيون
+            // وحدة التلفزيون بأبواب ومقابض، وشاشة معلّقة بإطار رفيع ومكبر صوت
+            rbox(1.55, 0.42, 0.36, 0.02, MAT.woodLight, tvX, 0.24, R.z0 + 0.3),
+            box(0.005, 0.34, 0.005, MAT.dark, tvX, 0.24, R.z0 + 0.482),
+            box(1.29, 0.76, 0.03, MAT.dark, tvX, 0.98, R.z0 + 0.205),
             screen,
+            rbox(0.7, 0.07, 0.09, 0.03, MAT.dark, tvX, 0.49, R.z0 + 0.3),
+            plant(tvX - inward * 1.05, R.z0 + 0.35, 1.2),
 
             // كنب صغير (مقعدان) مقابل الشاشة تماماً، ظهره للجنوب ووجهه للتلفزيون
-            box(1.45, 0.40, 0.80, MAT.fabric, tvX, 0.25, loveZ),                              // المقعد
-            box(1.45, 0.55, 0.22, MAT.fabric, tvX, 0.50, loveZ + 0.40),                       // الظهر
-            box(0.20, 0.46, 0.80, MAT.fabric, tvX - 0.72, 0.46, loveZ),                       // مسند يمين
-            box(0.20, 0.46, 0.80, MAT.fabric, tvX + 0.72, 0.46, loveZ),                       // مسند يسار
-            box(0.38, 0.14, 0.30, MAT.cushion, tvX - 0.34, 0.52, loveZ + 0.22),               // وسادة
-            box(0.38, 0.14, 0.30, MAT.cushion, tvX + 0.34, 0.52, loveZ + 0.22),               // وسادة
+            sofa(1.5, 0.85, 2, tvX, loveZ + 0.05, Math.PI),
 
             // كرسي مفرد مقابل الكنب
-            box(0.6, 0.42, 0.6, MAT.fabric, sofaX + inward * 1.85, 0.26, sofaZ + 0.35),
-            box(0.6, 0.5, 0.18, MAT.fabric, sofaX + inward * 2.06, 0.55, sofaZ + 0.35),
-            box(0.06, 0.24, 0.06, MAT.dark, sofaX + inward * 1.66, 0.12, sofaZ + 0.13),
-            box(0.06, 0.24, 0.06, MAT.dark, sofaX + inward * 1.66, 0.12, sofaZ + 0.57),
+            sofa(0.82, 0.8, 1, sofaX + inward * 1.95, sofaZ + 0.35, -inward * Math.PI / 2),
 
-            // لوحة جدارية فوق الكنب
-            box(0.03, 0.42, 1.05, mat(0xa9a196), wallX - inward * 0.05, 0.92, sofaZ),
+            // مصباح أرضي بجانب الأريكة
+            cyl(0.14, 0.16, 0.03, MAT.dark, wallX + inward * 0.35, 0.015, sofaZ - sofaLen / 2 - 0.3),
+            cyl(0.012, 0.012, 1.45, MAT.gold, wallX + inward * 0.35, 0.74, sofaZ - sofaLen / 2 - 0.3),
+            cyl(0.14, 0.2, 0.26, MAT.lampShade, wallX + inward * 0.35, 1.5, sofaZ - sofaLen / 2 - 0.3, 28),
+
+            // اللوحة الجدارية أُزيلت: الجدار خلف الكنب يُحذف عند دمج الصالة بالمطبخ،
+            // فكانت اللوحة تظهر معلّقة في الهواء
         ];
     },
 
@@ -370,20 +591,38 @@ const FURNITURE = {
         const upZ = north ? R.z0 + 0.19 : R.z0 + R.d - 0.19;       // الخزائن العلوية
         const inward = north ? 1 : -1;                              // اتجاه داخل الغرفة
         const cabW = Math.max(1.2, R.w - 0.5);
+        const frontZ = backZ + inward * 0.3;
+        const upFront = upZ + inward * 0.17;
+        const doors = Math.max(2, Math.round(cabW / 0.5));
 
         const out = [
-            box(cabW, 0.85, 0.6, MAT.white, R.mx, 0.45, backZ),                       // خزائن سفلية
-            box(cabW, 0.06, 0.62, MAT.dark, R.mx, 0.9, backZ),                        // سطح جرانيت
-            box(cabW * 0.86, 0.5, 0.34, MAT.white, R.mx, 1.42, upZ),                  // خزائن علوية
-            box(0.5, 0.05, 0.4, MAT.steel, R.mx - cabW * 0.28, 0.93, backZ),          // المغسلة
-            box(0.06, 0.3, 0.06, MAT.steel, R.mx - cabW * 0.28, 1.08, backZ - inward * 0.2),
-            box(0.42, 0.07, 0.32, MAT.dark, R.mx + cabW * 0.05, 0.95, backZ),         // سخانة كهربائية
-            box(0.5, 0.3, 0.36, MAT.white, R.mx + cabW * 0.3, 1.06, backZ),           // ميكروويف
-            box(0.58, 0.85, 0.58, MAT.white, R.x0 + 0.42, 0.43, backZ),               // ثلاجة صغيرة
-            box(0.34, 0.02, 0.24, MAT.white, R.x0 + 0.42, 0.87, backZ),               // صينية الضيافة
-            box(0.1, 0.22, 0.1, MAT.steel, R.x0 + 0.42, 0.99, backZ - inward * 0.06), // الغلاية
-            box(R.w * 0.5, 0.02, 0.8, MAT.rug, R.mx, 0.05, backZ + inward * 1.05),    // سجادة
+            rbox(cabW, 0.85, 0.6, 0.012, MAT.white, R.mx, 0.45, backZ),                  // خزائن سفلية
+            rbox(cabW + 0.04, 0.05, 0.64, 0.01, MAT.stone, R.mx, 0.9, backZ),            // سطح جرانيت
+            rbox(cabW * 0.86, 0.55, 0.34, 0.012, MAT.white, R.mx, 1.5, upZ),             // خزائن علوية
         ];
+        // أبواب الخزائن ومقابضها
+        for (let i = 0; i < doors; i++) {
+            const dx = R.mx - cabW / 2 + (cabW / doors) * (i + 0.5);
+            if (i) out.push(box(0.005, 0.8, 0.005, MAT.dark, R.mx - cabW / 2 + (cabW / doors) * i, 0.45, frontZ + inward * 0.002));
+            out.push(box(0.14, 0.015, 0.02, MAT.steel, dx, 0.8, frontZ + inward * 0.012));
+            if (Math.abs(dx - R.mx) < cabW * 0.43) out.push(box(0.12, 0.015, 0.02, MAT.steel, dx, 1.3, upFront + inward * 0.012));
+        }
+
+        const sinkX = R.mx - cabW * 0.28;
+        out.push(
+            box(0.5, 0.012, 0.38, MAT.steel, sinkX, 0.93, backZ),                          // المغسلة
+            cyl(0.015, 0.015, 0.3, MAT.steel, sinkX, 1.07, backZ - inward * 0.2, 12),      // الخلاط
+            box(0.03, 0.03, 0.18, MAT.steel, sinkX, 1.21, backZ - inward * 0.12),
+            rbox(0.46, 0.012, 0.34, 0.004, MAT.screenOff, R.mx + cabW * 0.05, 0.93, backZ),// سطح طبخ زجاجي
+            rbox(0.5, 0.3, 0.36, 0.02, MAT.white, R.mx + cabW * 0.3, 1.08, backZ),         // ميكروويف
+            box(0.3, 0.2, 0.005, MAT.screenOff, R.mx + cabW * 0.28, 1.08, backZ + inward * 0.181),
+            rbox(0.6, 0.85, 0.58, 0.02, MAT.white, R.x0 + 0.42, 0.43, backZ),              // ثلاجة صغيرة
+            box(0.02, 0.4, 0.03, MAT.steel, R.x0 + 0.65, 0.5, backZ + inward * 0.3),
+            cyl(0.07, 0.08, 0.2, MAT.steel, R.x0 + 0.42, 0.98, backZ - inward * 0.06, 20), // الغلاية
+            rbox(R.w * 0.5, 0.02, 0.8, 0.008, MAT.rug, R.mx, 0.05, backZ + inward * 1.05), // سجادة
+        );
+        [[-0.12, 0], [0.12, 0]].forEach(([dx]) =>                                          // دائرتا الطبخ
+            out.push(cyl(0.08, 0.08, 0.004, MAT.dark, R.mx + cabW * 0.05 + dx, 0.938, backZ, 24)));
 
         return out;
     },
@@ -399,28 +638,34 @@ const FURNITURE = {
         const toiletX = R.x0 + 0.34;                  // ملاصق للجدار الغربي
         const toiletZ = R.z0 + R.d - 0.92;
 
+        // ── المرحاض: قاعدة وحوض بيضاوي وغطاء وخزان على الجدار ──
+        const bowl = cyl(0.2, 0.15, 0.36, MAT.ceramic, toiletX + 0.14, 0.2, toiletZ, 28);
+        bowl.scale.set(1.35, 1, 1);
+        const seat = cyl(0.21, 0.21, 0.035, MAT.ceramic, toiletX + 0.14, 0.4, toiletZ, 28);
+        seat.scale.set(1.35, 1, 1);
+
         const out = [
-            // ── المرحاض: ظهره على الجدار الغربي تماماً ──
-            box(0.56, 0.42, 0.40, MAT.white, toiletX + 0.10, 0.22, toiletZ),
-            box(0.16, 0.52, 0.40, MAT.white, R.x0 + 0.09, 0.52, toiletZ),   // الخزان على الجدار
-            box(0.32, 0.05, 0.34, MAT.white, toiletX + 0.18, 0.45, toiletZ),
+            bowl, seat,
+            rbox(0.18, 0.5, 0.42, 0.04, MAT.ceramic, R.x0 + 0.1, 0.55, toiletZ),       // الخزان على الجدار
+            box(0.05, 0.02, 0.08, MAT.steel, R.x0 + 0.2, 0.81, toiletZ),                  // زر الطرد
 
-            // ── الدش: بلا قاعدة زجاجية — مصرف أرضي فقط ──
-            box(0.16, 0.012, 0.16, MAT.steel, showerX, 0.045, showerZ),      // مصرف الأرضية
-            box(0.06, 1.15, 0.06, MAT.steel, showerX, 0.62, R.z0 + 0.10),    // عمود الدش على الجدار
-
-            // ── المغسلة الصغيرة مع مرآة على الجدار الشمالي ──
-            box(0.46, 0.11, 0.34, MAT.white, basinX, 0.85, basinZ),
-            box(0.30, 0.74, 0.26, MAT.white, basinX, 0.42, basinZ),
-            box(0.44, 0.54, 0.03, mat(0xdfe9f2, { metalness: 0.6, roughness: 0.15 }),
-                basinX, 1.36, R.z0 + 0.06),                                   // المرآة
+            // ── الدش: مصرف أرضي وعمود ورشاش ومنشفة ──
+            box(0.16, 0.012, 0.16, MAT.steel, showerX, 0.045, showerZ),
+            cyl(0.02, 0.02, 1.15, MAT.steel, showerX, 0.62, R.z0 + 0.10, 12),
+            rbox(0.5, 0.6, 0.02, 0.01, MAT.duvet, showerX + 0.62, 1.05, R.z0 + 0.06),    // منشفة معلّقة
         ];
 
-        /* عناصر تفاعلية: الضغط عليها يُخرج الماء */
-        const head = box(0.26, 0.06, 0.26, MAT.steel, showerX, 1.22, R.z0 + 0.30);
-        const mixer = box(0.14, 0.16, 0.09, MAT.steel, showerX, 0.98, R.z0 + 0.11);
-        const tap = box(0.05, 0.18, 0.05, MAT.steel, basinX, 1.00, basinZ - 0.12);
-        const spout = box(0.05, 0.04, 0.16, MAT.steel, basinX, 1.07, basinZ - 0.05);
+        // ── المغسلة مع مرآة بإطار ── (عناصر تفاعلية تُخرج الماء)
+        const basinTop = rbox(0.48, 0.1, 0.36, 0.04, MAT.ceramic, basinX, 0.85, basinZ);
+        const basinStand = rbox(0.32, 0.74, 0.26, 0.03, MAT.ceramic, basinX, 0.42, basinZ);
+        out.push(basinTop, basinStand,
+            rbox(0.5, 0.6, 0.02, 0.01, MAT.gold, basinX, 1.36, R.z0 + 0.045),             // إطار المرآة
+            box(0.44, 0.54, 0.02, mat(0xe6eef5, { metalness: 0.85, roughness: 0.05 }), basinX, 1.36, R.z0 + 0.06));
+
+        const head = cyl(0.13, 0.13, 0.03, MAT.steel, showerX, 1.22, R.z0 + 0.30, 24);
+        const mixer = rbox(0.14, 0.16, 0.09, 0.02, MAT.steel, showerX, 0.98, R.z0 + 0.11);
+        const tap = cyl(0.025, 0.025, 0.18, MAT.steel, basinX, 1.00, basinZ - 0.12, 12);
+        const spout = box(0.04, 0.035, 0.16, MAT.steel, basinX, 1.07, basinZ - 0.05);
 
         const showerJet = makeWaterJet(0.22, 1.10, showerX, 1.19, R.z0 + 0.30);
         const basinJet = makeWaterJet(0.055, 0.20, basinX, 1.05, basinZ - 0.02);
@@ -430,7 +675,7 @@ const FURNITURE = {
             m.userData.jet = showerJet;
             m.userData.label = '🚿 الدش';
         });
-        [tap, spout, out[5], out[6]].forEach((m) => {
+        [tap, spout, basinTop, basinStand].forEach((m) => {
             m.userData.interactive = 'water';
             m.userData.jet = basinJet;
             m.userData.label = '🚰 المغسلة';
@@ -440,9 +685,16 @@ const FURNITURE = {
     },
 
     hall(R) {
+        const cw = Math.min(0.9, R.w * 0.25);
         return [
-            box(Math.min(0.9, R.w * 0.25), 0.4, 0.35, MAT.woodLight, R.x0 + 0.8, 0.22, R.z0 + R.d - 0.3),
-            box(0.5, 0.02, 0.8, MAT.rug, R.mx, 0.05, R.z0 + R.d - 0.5),
+            // طاولة مدخل بدرج، ومرآة ومزهرية، وسجادة ونبتة
+            rbox(cw, 0.06, 0.35, 0.015, MAT.woodLight, R.x0 + 0.8, 0.78, R.z0 + R.d - 0.3),
+            rbox(cw - 0.04, 0.16, 0.31, 0.015, MAT.woodLight, R.x0 + 0.8, 0.66, R.z0 + R.d - 0.3),
+            ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) =>
+                cyl(0.015, 0.015, 0.75, MAT.gold, R.x0 + 0.8 + sx * (cw / 2 - 0.04), 0.375, R.z0 + R.d - 0.3 + sz * 0.13, 10)),
+            cyl(0.05, 0.035, 0.2, MAT.ceramic, R.x0 + 0.8 + cw * 0.25, 0.91, R.z0 + R.d - 0.3, 18),
+            rbox(0.5, 0.02, 0.8, 0.008, MAT.rug, R.mx, 0.05, R.z0 + R.d - 0.5),
+            plant(R.x0 + 0.8 + cw / 2 + 0.3, R.z0 + R.d - 0.3, 1),
         ];
     },
 };
@@ -470,7 +722,15 @@ function buildApartment(scene, plan) {
     /* الأرضيات */
     scene.add(box(W + 0.6, 0.2, D + 0.6, MAT.slab, 0, -0.1, 0));
     rooms.forEach((r, i) => {
-        const m = MAT[FLOOR_MAT[r.type] || 'floorWood'];
+        // نسخة من المادة لكل غرفة حتى يُكرَّر البلاط بمقاس ثابت (~80 سم) مهما كبرت الغرفة
+        const base = MAT[FLOOR_MAT[r.type] || 'floorWood'];
+        const m = base.clone();
+        if (base.map) {
+            m.map = base.map.clone();
+            m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
+            m.map.repeat.set(Math.max(1, Math.round(r.w / 0.8)), Math.max(1, Math.round(r.d / 0.8)));
+            m.map.needsUpdate = true;
+        }
         // توسيع بسيط للغرف المدموجة حتى لا تظهر فجوة أرضية عند الجدار المحذوف،
         // مع إزاحة رأسية ضئيلة تمنع تداخل الأسطح المتطابقة (z-fighting)
         const pad = r.group ? 0.3 : 0;
@@ -667,40 +927,105 @@ function buildApartment(scene, plan) {
 }
 
 /* ── الإضاءة ─────────────────────────────────────────────────────── */
+
+/* بيئة إضاءة ناعمة (Image-Based Lighting): غرفة افتراضية بألواح ضوء دافئة
+   تُحوَّل إلى خريطة انعكاس، فتكتسب الأسطح انعكاسات وإضاءة محيطة واقعية
+   دون تحميل أي صورة خارجية. */
+function makeEnvironment(renderer) {
+    const env = new THREE.Scene();
+    const room = new THREE.Mesh(
+        new THREE.BoxGeometry(24, 12, 24),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(0xcfc4b6).multiplyScalar(0.55), side: THREE.BackSide }));
+    room.position.y = 5;
+    env.add(room);
+
+    // ENV_K يضبط شدة البيئة كلها (بديل environmentIntensity غير المتاح في هذه النسخة)
+    const ENV_K = 0.55;
+    const panel = (w, h, pos, color, k) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(k * ENV_K), side: THREE.DoubleSide }));
+        m.position.set(...pos);
+        m.lookAt(0, 2, 0);
+        env.add(m);
+    };
+    panel(14, 14, [0, 10.9, 0], 0xfff4e6, 3.2);     // سقف مضيء
+    panel(8, 5, [11.5, 5, 3], 0xffe2bf, 5.5);       // نافذة شمس دافئة
+    panel(6, 4, [-11.5, 4, -4], 0xdbe8ff, 2.2);     // ضوء سماء بارد
+    panel(10, 3, [0, 3, -11.5], 0xfff0dd, 1.6);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const tex = pmrem.fromScene(env, 0.04).texture;
+    pmrem.dispose();
+    return tex;
+}
+
+/* خلفية بتدرّج دافئ ناعم بدل اللون المسطّح */
+function makeBackground() {
+    return makeCanvasTexture(4, 256, (g, W, H) => {
+        const grad = g.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#fbf3ec');
+        grad.addColorStop(0.55, '#f4ede6');
+        grad.addColorStop(1, '#e9e1d8');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, W, H);
+    });
+}
+
 function buildLights(scene, plan) {
     const A = plan.apartment;
     const W = A.width, D = A.depth;
 
-    // ضوء السماء العام — بارد من الأعلى ودافئ منعكس من الأرضية
-    scene.add(new THREE.HemisphereLight(0xdceaff, 0xc8ad8c, 0.7));
+    // ضوء السماء العام — خفيف لأن خريطة البيئة تتولى الإضاءة المحيطة
+    scene.add(new THREE.HemisphereLight(0xeaf2ff, 0xd9c2a3, 0.35));
 
-    // شمس الرياض: ضوء رئيسي دافئ مع ظلال ناعمة
-    const sun = new THREE.DirectionalLight(0xfff1dc, 1.75);
-    sun.position.set(W * 0.55, Math.max(12, W * 0.9), D * 1.4);
+    // شمس ذهبية منخفضة: ظلال طويلة ناعمة تُبرز الأثاث
+    const sun = new THREE.DirectionalLight(0xffe7c4, 2.4);
+    sun.position.set(W * 0.6, Math.max(9, W * 0.7), D * 1.6);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.radius = 3;
-    sun.shadow.bias = -0.0006;
-    sun.shadow.normalBias = 0.02;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.025;
     const s = Math.max(W, D) * 0.75;
     sun.shadow.camera.left = -s; sun.shadow.camera.right = s;
     sun.shadow.camera.top = s; sun.shadow.camera.bottom = -s;
     sun.shadow.camera.near = 1; sun.shadow.camera.far = 60;
     scene.add(sun);
 
-    // ضوء ملء بارد يوازن الظلال العميقة
-    const fill = new THREE.DirectionalLight(0xbfd8f5, 0.5);
-    fill.position.set(-W * 0.4, 7, -D);
+    // ضوء ملء بارد خفيف من الجهة المقابلة
+    const fill = new THREE.DirectionalLight(0xcfe0ff, 0.35);
+    fill.position.set(-W * 0.5, 6, -D * 1.2);
     scene.add(fill);
 
     // إنارة داخلية دافئة لكل غرفة — تحاكي الإضاءة المخفية في الصور
     (plan.rooms || []).forEach((r) => {
-        const lamp = new THREE.PointLight(0xffd7a0, 4.2, Math.max(r.w, r.d) * 1.6, 2);
-        lamp.position.set(r.x + r.w / 2 - W / 2, 1.95, r.z + r.d / 2 - D / 2);
+        const lamp = new THREE.PointLight(0xffc98a, 7, Math.max(r.w, r.d) * 1.8, 2);
+        lamp.position.set(r.x + r.w / 2 - W / 2, 1.85, r.z + r.d / 2 - D / 2);
         scene.add(lamp);
-
     });
+
+    // أرضية خارجية شفافة تستقبل ظل الشقة فتبدو مستقرة على الأرض
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(W * 4, D * 6),
+        new THREE.ShadowMaterial({ opacity: 0.16 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.199;
+    ground.receiveShadow = true;
+    scene.add(ground);
 }
+
+/* أيقونات خطية موحّدة للأزرار — لونها يتبع لون الزر (برتقالي، وأبيض عند الضغط) */
+const svgIcon = (paths) =>
+    `<svg class="ico ico-inherit" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+
+const CHIP_ICON = {
+    bedroom: svgIcon('<path d="M3 18v-7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7"/><path d="M2 18h20M6 9V6.5A1.5 1.5 0 0 1 7.5 5h9A1.5 1.5 0 0 1 18 6.5V9"/><path d="M3 21v-3M21 21v-3"/>'),
+    living: svgIcon('<path d="M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/><path d="M3 11h18a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"/><path d="M5 17v2M19 17v2"/>'),
+    kitchen: svgIcon('<rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.5" cy="8.5" r="1.6"/><circle cx="15.5" cy="8.5" r="1.6"/><path d="M6 14.5h12"/>'),
+    bath: svgIcon('<path d="M6 13V6.5A3.5 3.5 0 0 1 9.5 3h1"/><path d="M3 13h10M5.5 17v.5M8 16.5v.5M10.5 17v.5M6.5 20.5v.5M9.5 20v.5"/>'),
+    hall: svgIcon('<circle cx="8" cy="8" r="4.5"/><path d="M11.2 11.2 20 20M17 17l-2 2M20 14l-2 2"/>'),
+    other: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/>'),
+};
+const ICON_PAUSE = svgIcon('<path d="M9.5 5v14M14.5 5v14"/>');
+const ICON_PLAY = svgIcon('<path d="M8 5.5v13l10.5-6.5z"/>');
 
 /* أزرار الغرف تُولَّد من الملف حتى تتطابق دائماً مع المخطط */
 function buildChips(rooms) {
@@ -717,7 +1042,7 @@ function buildChips(rooms) {
         b.setAttribute('aria-label', r.name);
 
         // الأيقونة وحدها هي الظاهرة؛ الاسم يبقى في عنصر مخفي لقارئات الشاشة
-        b.append(((ROOM_INFO[r.type] || {}).icon || '📐') + ' ');
+        b.innerHTML = CHIP_ICON[r.type] || CHIP_ICON.other;
         const label = document.createElement('span');
         label.className = 'apt3d-chip-label';
         label.textContent = r.name;
@@ -735,11 +1060,12 @@ function init(container, plan) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;   // تدرّج لوني سينمائي
-    renderer.toneMappingExposure = 0.94;
+    renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xeef2f7);
+    scene.background = makeBackground();
+    scene.environment = makeEnvironment(renderer);
 
     buildLights(scene, plan);
     const { pickables, rooms, doors, W, D } = buildApartment(scene, plan);
@@ -911,7 +1237,7 @@ function init(container, plan) {
             infoEl.classList.add('visible');
         }
 
-        document.querySelectorAll('.apt3d-chip').forEach((c) => {
+        document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => {
             c.classList.toggle('active', c.dataset.room === key);
         });
 
@@ -931,7 +1257,9 @@ function init(container, plan) {
 
     const resetBtn = document.getElementById('apt3d-reset');
     if (resetBtn) resetBtn.addEventListener('click', () => {
-        document.querySelectorAll('.apt3d-chip').forEach((c) => c.classList.remove('active'));
+        document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => c.classList.remove('active'));
+        resetBtn.classList.add('active');
+        setTimeout(() => resetBtn.classList.remove('active'), 350);
         if (infoEl) infoEl.classList.remove('visible');
         anim = {
             from: controls.target.clone(), to: new THREE.Vector3(0, 0.6, 0),
@@ -944,7 +1272,8 @@ function init(container, plan) {
     if (rotBtn) rotBtn.addEventListener('click', () => {
         autoRotate = !autoRotate;
         const label = autoRotate ? 'إيقاف الدوران' : 'تشغيل الدوران';
-        rotBtn.textContent = autoRotate ? '⏸️' : '▶️';
+        rotBtn.innerHTML = autoRotate ? ICON_PAUSE : ICON_PLAY;
+        rotBtn.classList.toggle('active', !autoRotate);   // متوقف = زر مضغوط (أبيض)
         rotBtn.title = label;
         rotBtn.setAttribute('aria-label', label);
     });
