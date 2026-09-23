@@ -347,6 +347,32 @@ body::before {
     background: rgba(253, 238, 231, 0.66);
 }
 
+/* إطار متدرّج بلون هوية كل منصة: طبقة داخلية فاتحة فوق طبقة متدرّجة تظهر في حدود الإطار */
+.title-card.title-gathern,
+.title-card.title-airbnb {
+    border: 1.5px solid transparent;
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+}
+
+.title-card.title-gathern {
+    background-image:
+        linear-gradient(rgba(245, 241, 255, 0.92), rgba(245, 241, 255, 0.92)),
+        linear-gradient(135deg, #4c1d95, #7c3aed 50%, #c084fc);
+}
+
+.title-card.title-airbnb {
+    background-image:
+        linear-gradient(rgba(255, 242, 243, 0.92), rgba(255, 242, 243, 0.92)),
+        linear-gradient(135deg, #e61e4d, #ff5a5f 50%, #ff8a8e);
+}
+
+/* عنوان المنصة بلون هويتها (درجات داكنة تحقق تباين القراءة على الخلفية الفاتحة) */
+.title-card.title-gathern .title-platform-badge,
+.title-card.title-gathern .title-platform-badge .ico { color: #5b21b6; }
+.title-card.title-airbnb .title-platform-badge,
+.title-card.title-airbnb .title-platform-badge .ico { color: #c81e4b; }
+
 .title-platform-badge {
     font-size: 12px;
     font-weight: 700;
