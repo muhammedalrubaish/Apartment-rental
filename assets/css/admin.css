@@ -227,7 +227,13 @@ a { color: inherit; text-decoration: none; }
 .topbar-title h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.2px; color: #fff; }
 .topbar-title p { font-size: 12.5px; color: rgba(255, 255, 255, 0.85); font-weight: 500; }
 
-.topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* السطر الأول: العنوان يميناً والأيقونات في أقصى اليسار (RTL) */
+.topbar-head { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
+.topbar-icons { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-inline-start: auto; }
+
+/* السطر الثاني: الإجراءات الثلاثة في سطر واحد لا يلتف */
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; width: 100%; }
+.topbar-actions .btn { justify-content: center; }
 
 .topbar .icon-btn {
     background: rgba(255, 255, 255, 0.16);
@@ -809,6 +815,10 @@ textarea.input.compact { min-height: 0; height: 50px; }
     .main { padding: 8px 8px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .topbar { padding: 10px 12px; }
     .topbar-title h1 { font-size: 16.5px; }
+    /* على الجوال تتقاسم الأزرار الثلاثة عرض السطر بالتساوي */
+    .topbar-actions .btn { flex: 1 1 0; min-width: 0; padding: 0 8px; gap: 5px; font-size: 12.5px; }
+    .topbar-actions .btn span { overflow: hidden; text-overflow: ellipsis; }
+    .topbar-actions .btn svg { flex-shrink: 0; }
     .card { --card-pad: 12px; }
     .form-row { grid-template-columns: 1fr; }
     /* نافذة أصغر وأكثر تكثيفاً على الجوال */

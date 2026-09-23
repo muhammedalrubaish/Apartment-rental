@@ -112,34 +112,40 @@
 
         <!-- شريط علوي -->
         <header class="topbar">
-            <div class="topbar-title">
-                <h1 id="page-title">لوحة التحكم</h1>
-                <p id="page-sub">نظرة شاملة على التشغيل والإيرادات والمصاريف</p>
+            <!-- السطر الأول: العنوان يميناً، وأيقونات الوضع واللغة والإشعارات في أقصى اليسار -->
+            <div class="topbar-head">
+                <div class="topbar-title">
+                    <h1 id="page-title">لوحة التحكم</h1>
+                    <p id="page-sub">نظرة شاملة على التشغيل والإيرادات والمصاريف</p>
+                </div>
+                <div class="topbar-icons">
+                    <button class="icon-btn" id="btn-theme" title="الوضع الداكن / الفاتح">
+                        <svg id="icon-theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8"/></svg>
+                    </button>
+                    <button class="icon-btn" id="btn-lang" title="تغيير اللغة">
+                        <span style="font-size:12px;font-weight:800" id="lang-label">EN</span>
+                    </button>
+                    <button class="icon-btn" id="btn-bell" title="الإشعارات">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+                        <span class="dot" id="bell-dot" hidden></span>
+                    </button>
+                </div>
             </div>
 
+            <!-- السطر الثاني: الإجراءات في سطر واحد، وحجز جديد أولاً -->
             <div class="topbar-actions">
-                <a href="collection.html" class="btn btn-ghost btn-sm" id="btn-goto-debt" title="لوحة تحصيل الدين">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                    <span>تحصيل الدين</span>
-                </a>
-                <a href="index.html" class="btn btn-ghost btn-sm" id="btn-view-site" title="عرض الموقع">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14 21 3M21 3h-6M21 3v6"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-                    <span>عرض الموقع</span>
-                </a>
-                <button class="icon-btn" id="btn-theme" title="الوضع الداكن / الفاتح">
-                    <svg id="icon-theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8"/></svg>
-                </button>
-                <button class="icon-btn" id="btn-lang" title="تغيير اللغة">
-                    <span style="font-size:12px;font-weight:800" id="lang-label">EN</span>
-                </button>
-                <button class="icon-btn" id="btn-bell" title="الإشعارات">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
-                    <span class="dot" id="bell-dot" hidden></span>
-                </button>
                 <button class="btn btn-primary" id="btn-new-booking">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     <span data-i18n="action.newBooking">حجز جديد</span>
                 </button>
+                <a href="collection.html" class="btn btn-ghost" id="btn-goto-debt" title="لوحة تحصيل الدين">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <span>تحصيل الدين</span>
+                </a>
+                <a href="index.html" class="btn btn-ghost" id="btn-view-site" title="عرض الموقع">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14 21 3M21 3h-6M21 3v6"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                    <span>عرض الموقع</span>
+                </a>
             </div>
         </header>
 
