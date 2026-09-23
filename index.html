@@ -3,9 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>شقة متكاملة وأنيقة بدخول ذكي | الرياض - حي السليمانية</title>
+    <title>شقة للإيجار اليومي في الرياض | حي السليمانية قرب المترو — RentAPA</title>
     <meta name="theme-color" content="#f2622a">
-    <meta name="description" content="سكن أنيق ومتميز بدخول ذكي، موقع استراتيجي قرب المترو والمستشفيات، مطبخ مجهز بالكامل وشاشة ذكية وإنترنت عالي السرعة.">
+    <meta name="description" content="شقة مفروشة للإيجار اليومي في الرياض بحي السليمانية قرب المترو. دخول ذاتي، مطبخ مجهز، واي فاي وموقف مجاني. من 220 ريال لليلة — احجز مباشرة عبر واتساب.">
+    <meta name="keywords" content="شقة للإيجار اليومي الرياض, شقق مفروشة الرياض, حجز سكن الرياض, شقة حي السليمانية, سكن قريب من المترو الرياض, شقق فندقية الرياض, شقة دخول ذاتي الرياض, إيجار شقة يومي, RentAPA">
+
+    <!-- تحسين الظهور في محركات البحث (SEO) -->
+    <link rel="canonical" href="https://rentapa.vercel.app/">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="geo.region" content="SA-01">
+    <meta name="geo.placename" content="الرياض، حي السليمانية">
 
     <!-- اسم التطبيق عند الإضافة للشاشة الرئيسية -->
     <link rel="manifest" href="manifest.json">
@@ -18,11 +25,83 @@
 
     <!-- بطاقة المشاركة (واتساب وتويتر) -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="شقة متكاملة وأنيقة بدخول ذكي | الرياض">
-    <meta property="og:description" content="سكن أنيق بدخول ذكي، قريب من المترو والمستشفيات، مطبخ مجهز وشاشة ذكية وإنترنت عالي السرعة.">
-    <meta property="og:image" content="assets/images/living.jpg">
+    <meta property="og:site_name" content="RentAPA">
+    <meta property="og:url" content="https://rentapa.vercel.app/">
+    <meta property="og:title" content="شقة للإيجار اليومي في الرياض — حي السليمانية قرب المترو">
+    <meta property="og:description" content="شقة مفروشة بدخول ذاتي، مطبخ مجهز وواي فاي وموقف مجاني. من 220 ريال لليلة — احجز مباشرة عبر واتساب.">
+    <meta property="og:image" content="https://rentapa.vercel.app/assets/images/living.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="1600">
+    <meta property="og:image:alt" content="صالة شقة مفروشة للإيجار اليومي في الرياض">
     <meta property="og:locale" content="ar_SA">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="شقة للإيجار اليومي في الرياض — حي السليمانية">
+    <meta name="twitter:image" content="https://rentapa.vercel.app/assets/images/living.jpg">
+
+    <!-- بيانات منظمة (Schema.org) — تساعد قوقل على فهم أنه سكن للحجز في الرياض بسعره وموقعه ومرافقه -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "LodgingBusiness",
+          "@id": "https://rentapa.vercel.app/#lodging",
+          "name": "RentAPA — شقة مفروشة للإيجار اليومي في الرياض",
+          "alternateName": ["شقة متكاملة وانيقة بدخول ذكي", "شقة مميزة قريب من المترو والخدمات"],
+          "description": "شقة مفروشة للإيجار اليومي في حي السليمانية بالرياض، على بعد دقائق من المترو والمستشفيات والمتاجر. غرفة نوم بسرير كوين وصالة بشاشة ذكية ومطبخ مجهز، دخول ذاتي بقفل ذكي، واي فاي سريع وموقف مجاني.",
+          "url": "https://rentapa.vercel.app/",
+          "image": [
+            "https://rentapa.vercel.app/assets/images/living.jpg",
+            "https://rentapa.vercel.app/assets/images/bedroom.jpg",
+            "https://rentapa.vercel.app/assets/images/kitchen.jpg",
+            "https://rentapa.vercel.app/assets/images/building.jpg"
+          ],
+          "telephone": "+966549814764",
+          "priceRange": "220–280 ر.س لليلة",
+          "currenciesAccepted": "SAR",
+          "address": {
+            "@type": "PostalAddress",
+            "streetAddress": "7905 عبدالحميد الكاتب",
+            "addressLocality": "الرياض",
+            "addressRegion": "منطقة الرياض",
+            "postalCode": "12245",
+            "addressCountry": "SA"
+          },
+          "areaServed": { "@type": "City", "name": "الرياض" },
+          "numberOfRooms": 1,
+          "amenityFeature": [
+            { "@type": "LocationFeatureSpecification", "name": "دخول ذاتي بقفل ذكي", "value": true },
+            { "@type": "LocationFeatureSpecification", "name": "واي فاي عالي السرعة", "value": true },
+            { "@type": "LocationFeatureSpecification", "name": "موقف سيارات مجاني", "value": true },
+            { "@type": "LocationFeatureSpecification", "name": "مطبخ مجهز بالكامل", "value": true },
+            { "@type": "LocationFeatureSpecification", "name": "شاشة ذكية", "value": true },
+            { "@type": "LocationFeatureSpecification", "name": "تكييف", "value": true },
+            { "@type": "LocationFeatureSpecification", "name": "غسالة ملابس", "value": true },
+            { "@type": "LocationFeatureSpecification", "name": "قريب من المترو", "value": true }
+          ],
+          "makesOffer": {
+            "@type": "Offer",
+            "name": "ليلة في شقة مفروشة — وسط الأسبوع",
+            "priceSpecification": {
+              "@type": "UnitPriceSpecification",
+              "price": 220,
+              "priceCurrency": "SAR",
+              "unitText": "ليلة"
+            },
+            "availability": "https://schema.org/InStock",
+            "url": "https://rentapa.vercel.app/#booking"
+          }
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://rentapa.vercel.app/#website",
+          "url": "https://rentapa.vercel.app/",
+          "name": "RentAPA",
+          "inLanguage": "ar"
+        }
+      ]
+    }
+    </script>
 
     <!-- شعار التبويب -->
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
@@ -116,7 +195,7 @@
         <!-- Image Gallery Showcase — صور الشقة الفعلية -->
         <section class="gallery-grid">
             <figure class="gallery-item main">
-                <img class="gallery-img" src="assets/images/living.jpg" alt="صالة الشقة مع الأريكة والشاشة الذكية" loading="eager" width="1200" height="1600">
+                <img class="gallery-img" src="assets/images/living.jpg" alt="صالة شقة مفروشة للإيجار اليومي في الرياض مع الأريكة والشاشة الذكية" loading="eager" width="1200" height="1600">
                 <figcaption class="gallery-caption"><svg class="ico ico-inherit" viewBox="0 0 24 24"><path d="M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/><path d="M3 11h18a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"/><path d="M5 17v2M19 17v2"/></svg> الصالة: أريكة مريحة وشاشة ذكية وإضاءة مخفية</figcaption>
             </figure>
 
@@ -197,12 +276,16 @@
             <div>
                 <!-- Property Description Section -->
                 <div class="card-section">
-                    <h3 class="card-title"><svg class="ico" viewBox="0 0 24 24"><path d="M4 21h16"/><path d="M6.5 17.5 17 7a2.1 2.1 0 0 0-3-3L3.5 14.5 3 18z"/></svg> عن هذا المسكن</h3>
+                    <!-- العنوان الرئيسي للصفحة (H1) — أهم إشارة لمحركات البحث عن موضوع الصفحة -->
+                    <h1 class="card-title"><svg class="ico" viewBox="0 0 24 24"><path d="M4 21h16"/><path d="M6.5 17.5 17 7a2.1 2.1 0 0 0-3-3L3.5 14.5 3 18z"/></svg> شقة مفروشة للإيجار اليومي في الرياض — حي السليمانية</h1>
                     <p class="description-text text-justify">
                         يمزج السكن بين الموقع الاستراتيجي وقرب الخدمات الأساسية والترفيهية. يقع على بعد دقائق من المترو، مما يسهل التنقل، وعلى مقربة من مستشفيات ومتاجر كبرى.
                     </p>
                     <p class="description-text text-justify" style="margin-top: 10px;">
                         يتمتع السكن بجميع المرافق الأساسية: مطبخ مجهز بالكامل للطبخ، وشاشة ذكية لتجربة مشاهدة ممتعة، وإنترنت عالي السرعة يغطي جميع احتياجاتك.
+                    </p>
+                    <p class="description-text text-justify" style="margin-top: 10px;">
+                        سواء كانت زيارتك للرياض للعمل أو العلاج أو السياحة، تجد هنا سكناً مريحاً بالحجز اليومي: غرفة نوم بسرير كوين، وصالة، ومطبخ، ودورة مياه، لما يصل إلى 3 ضيوف، مع دخول ذاتي بقفل ذكي وموقف سيارات مجاني. احجز مباشرة مع المالك عبر واتساب بدون عمولة، أو عبر جاذر إن وAirbnb.
                     </p>
                 </div>
 
@@ -306,6 +389,35 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- أسئلة شائعة — محتوى نصي يجيب عمّا يبحث عنه الناس قبل حجز سكن في الرياض -->
+                <div class="card-section faq-section" id="faq">
+                    <h2 class="card-title"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.2-2.5 3.8"/><path d="M12 17.2h.01"/></svg> أسئلة شائعة عن الحجز</h2>
+                    <details class="faq-item">
+                        <summary>كم سعر الليلة في الشقة؟</summary>
+                        <p>220 ريال لليلة وسط الأسبوع، و280 ريال لليلتي الخميس والجمعة. يظهر السعر الإجمالي فور اختيار تاريخ الوصول والمغادرة في نموذج الحجز.</p>
+                    </details>
+                    <details class="faq-item">
+                        <summary>أين تقع الشقة في الرياض؟</summary>
+                        <p>في حي السليمانية بالرياض (7905 شارع عبدالحميد الكاتب، الرمز المختصر RHSA7905)، على بعد دقائق من محطة المترو والمستشفيات الكبرى والمتاجر والمطاعم.</p>
+                    </details>
+                    <details class="faq-item">
+                        <summary>كيف أحجز الشقة؟</summary>
+                        <p>اختر التواريخ وعدد الضيوف ثم اضغط «احجز الآن عبر الواتساب» للحجز المباشر مع المالك بدون عمولة. ويمكنك الحجز أيضاً عبر منصتي جاذر إن وAirbnb.</p>
+                    </details>
+                    <details class="faq-item">
+                        <summary>هل يمكن الحجز لليلة واحدة فقط؟</summary>
+                        <p>نعم، الحجز يومي ويبدأ من ليلة واحدة. اختر تاريخ الوصول وتُضبط المغادرة تلقائياً لليوم التالي.</p>
+                    </details>
+                    <details class="faq-item">
+                        <summary>كيف يتم تسجيل الدخول للشقة؟</summary>
+                        <p>الدخول ذاتي عبر قفل ذكي يعمل بالبصمة والرمز، فلا حاجة لاستلام مفتاح أو انتظار أحد.</p>
+                    </details>
+                    <details class="faq-item">
+                        <summary>ما المرافق المتوفرة؟</summary>
+                        <p>غرفة نوم بسرير كوين، وصالة بشاشة ذكية، ومطبخ مجهز بالكامل، وواي فاي عالي السرعة، وتكييف، وغسالة ملابس، وموقف سيارات مجاني، مع مطفأة حريق وحقيبة إسعافات أولية وكاشف دخان.</p>
+                    </details>
                 </div>
 
                 <!-- Platforms Directory Section -->

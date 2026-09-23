@@ -1,0 +1,9 @@
+# RentAPA — شقة للإيجار اليومي في الرياض
+User-agent: *
+Allow: /
+# لوحة التحكم وصفحة التحصيل ونقاط الخادم خاصة بالمالك
+Disallow: /admin
+Disallow: /collection
+Disallow: /api/
+
+Sitemap: https://rentapa.vercel.app/sitemap.xml
