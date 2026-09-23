@@ -2135,3 +2135,104 @@ body.chat-open .floating-wa { display: none; }
 
 .chat-forward:hover { filter: brightness(1.06); }
 .chat-forward[hidden] { display: none; }
+
+/* ==========================================================================
+   نموذج الحجز: التاريخان جنباً إلى جنب وسعر وسط الأسبوع / الويكند
+   ========================================================================== */
+.price-hint {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: -12px 0 18px;
+}
+
+.date-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+/* الحقل الأصلي شفاف يغطي البطاقة كلها: النقر يفتح تقويم الجهاز، والعرض المنسّق
+   بالعربية فوقه بصرياً — يتجنب تشوّه اتجاه التاريخ في Safari داخل صفحة RTL */
+.date-field {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: var(--transition);
+    min-width: 0;
+}
+
+.date-field:focus-within {
+    border-color: var(--primary);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.date-lbl { font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
+.date-val { font-size: 14.5px; font-weight: 800; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.date-val.is-empty { color: var(--primary-text); font-weight: 700; }
+
+.date-field input[type="date"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+    font-size: 16px;               /* يمنع iOS من تكبير الصفحة عند الضغط */
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.date-field input[type="date"]::-webkit-calendar-picker-indicator {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.calc-row.calc-sub { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+
+/* شارة التوثيق أسفل الصفحة */
+.footer-verified {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 12px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+    font-size: 12.5px;
+    font-weight: 700;
+}
+.footer-verified .ico { color: #4ade80; }
+
+/* ==========================================================================
+   ظهور تدريجي للأقسام عند التمرير (الصنف يضيفه app.js)
+   ========================================================================== */
+.reveal {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity, transform;
+}
+.reveal.in { opacity: 1; transform: none; }
+
+/* شاشات اللمس: خط 16px في الحقول يمنع iOS من تكبير الصفحة عند الضغط */
+@media (pointer: coarse) {
+    .form-control { font-size: 16px; }
+}
+.date-day { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-muted); margin-top: 2px; }

@@ -11,56 +11,157 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!apartmentData) return;
 
-    // 2. Set Price & Calculate total nights
-    const pricePerNight = apartmentData.pricing.price_per_night || 294;
+    /* 2. التسعير: سعر وسط الأسبوع وسعر الويكند، ويُحسب لكل ليلة على حدة.
+          weekend_nights بأرقام getDay (4 = الخميس، 5 = الجمعة).
+          السعر يظهر بعد اختيار اليوم، ولا تُملأ تواريخ افتراضية. */
+    const pricing = apartmentData.pricing || {};
+    const WEEKDAY = Number(pricing.weekday_price) || Number(pricing.price_per_night) || 220;
+    const WEEKEND = Number(pricing.weekend_price) || WEEKDAY;
+    const WEEKEND_NIGHTS = Array.isArray(pricing.weekend_nights) ? pricing.weekend_nights : [4, 5];
+    const LOCALE = 'ar-u-ca-gregory-nu-latn';
+
     const checkinInput = document.getElementById('checkin');
     const checkoutInput = document.getElementById('checkout');
+    const checkinView = document.getElementById('checkin-view');
+    const checkoutView = document.getElementById('checkout-view');
     const guestsInput = document.getElementById('guests');
+    const priceVal = document.getElementById('price-val');
+    const priceUnit = document.getElementById('price-unit');
+    const priceHint = document.getElementById('price-hint');
+    const summaryEl = document.getElementById('calc-summary');
     const nightsCountEl = document.getElementById('nights-count');
+    const breakdownEl = document.getElementById('nights-breakdown');
     const totalAmountEl = document.getElementById('total-amount');
     const waBookingBtn = document.getElementById('btn-wa-booking');
+    if (!checkinInput || !checkoutInput) return;
 
-    // Default dates (Tomorrow & Day after tomorrow)
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dayAfter = new Date(today);
-    dayAfter.setDate(dayAfter.getDate() + 3);
+    // التواريخ كنص YYYY-MM-DD وتُفسَّر محلياً (لا UTC) حتى لا يُزاح اليوم
+    const parse = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+    const toIso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    const addDays = (s, n) => { const dt = parse(s); dt.setDate(dt.getDate() + n); return toIso(dt); };
+    const nightPrice = (dt) => (WEEKEND_NIGHTS.indexOf(dt.getDay()) !== -1 ? WEEKEND : WEEKDAY);
+    const isWeekend = (dt) => WEEKEND_NIGHTS.indexOf(dt.getDay()) !== -1;
+    const fmt = (s) => parse(s).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long' });
+    const dayName = (s) => parse(s).toLocaleDateString(LOCALE, { weekday: 'long' });
 
-    if (checkinInput && checkoutInput) {
-        checkinInput.valueAsDate = tomorrow;
-        checkoutInput.valueAsDate = dayAfter;
+    const todayIso = toIso(new Date());
+    checkinInput.min = todayIso;
+    checkoutInput.min = addDays(todayIso, 1);
+
+    // على الحاسوب لا يفتح النقر على حقل التاريخ التقويمَ تلقائياً؛ showPicker يفتحه
+    [checkinInput, checkoutInput].forEach((inp) => {
+        inp.addEventListener('click', () => { try { inp.showPicker && inp.showPicker(); } catch (e) { /* غير مدعوم */ } });
+    });
+
+    function setView(el, value) {
+        if (!el) return;
+        // التاريخ في سطر واسم اليوم تحته — يتسع للشاشات الضيقة دون قص
+        el.textContent = value ? fmt(value) : 'اختر التاريخ';
+        if (value) {
+            const day = document.createElement('small');
+            day.className = 'date-day';
+            day.textContent = dayName(value);
+            el.appendChild(day);
+        }
+        el.classList.toggle('is-empty', !value);
     }
 
     function calculateBooking() {
-        if (!checkinInput || !checkoutInput) return;
-        const d1 = new Date(checkinInput.value);
-        const d2 = new Date(checkoutInput.value);
-        
-        let nights = Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24));
-        if (isNaN(nights) || nights < 1) nights = 1;
+        const ci = checkinInput.value;
+        const co = checkoutInput.value;
+        setView(checkinView, ci);
+        setView(checkoutView, co);
 
-        const total = nights * pricePerNight;
+        const phone = apartmentData.host.whatsapp || '966549814764';
         const guests = guestsInput ? guestsInput.value : 1;
 
-        if (nightsCountEl) nightsCountEl.textContent = `${nights} ليلة`;
-        if (totalAmountEl) totalAmountEl.textContent = `${total} SAR`;
+        if (!ci || !co || co <= ci) {
+            // قبل اختيار الأيام: السعر المرجعي فقط
+            priceVal.textContent = WEEKDAY;
+            priceUnit.textContent = 'ريال / ليلة وسط الأسبوع';
+            priceHint.hidden = false;
+            summaryEl.hidden = true;
+            if (waBookingBtn) {
+                const msg = `مرحباً أستاذ ${apartmentData.host.owner_name}، أرغب في الاستفسار عن حجز الشقة (${apartmentData.title_gathern}).`;
+                waBookingBtn.href = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+            }
+            return;
+        }
 
-        // Update WhatsApp Booking Link
+        // سعر كل ليلة من ليلة الوصول حتى الليلة السابقة للمغادرة
+        let weekdayN = 0, weekendN = 0, total = 0;
+        for (let d = parse(ci); toIso(d) < co; d.setDate(d.getDate() + 1)) {
+            total += nightPrice(d);
+            if (isWeekend(d)) weekendN++; else weekdayN++;
+        }
+        const nights = weekdayN + weekendN;
+
+        if (nights === 1) {
+            priceVal.textContent = total;
+            priceUnit.textContent = `ريال / ليلة ${dayName(ci)}`;
+        } else {
+            priceVal.textContent = total;
+            priceUnit.textContent = `ريال لـ ${nights} ليالٍ`;
+        }
+        priceHint.hidden = true;
+
+        summaryEl.hidden = false;
+        nightsCountEl.textContent = nights === 1 ? 'ليلة واحدة' : `${nights} ليالٍ`;
+        breakdownEl.innerHTML = [
+            weekdayN ? `<div class="calc-row calc-sub"><span>${weekdayN} × وسط الأسبوع</span><span>${weekdayN * WEEKDAY} ريال</span></div>` : '',
+            weekendN ? `<div class="calc-row calc-sub"><span>${weekendN} × ويكند</span><span>${weekendN * WEEKEND} ريال</span></div>` : '',
+        ].join('');
+        totalAmountEl.textContent = `${total} ريال`;
+
         if (waBookingBtn) {
-            const phone = apartmentData.host.whatsapp || "966549814764";
-            const msg = `مرحباً أستاذ ${apartmentData.host.owner_name}، أرغب في حجز الشقة الأنيقة (${apartmentData.title_gathern}) من تاريخ ${checkinInput.value} إلى ${checkoutInput.value} (عدد الليالي: ${nights}، الضيوف: ${guests}). الإجمالي التقديري: ${total} ريال سعودي.`;
+            const msg = `مرحباً أستاذ ${apartmentData.host.owner_name}، أرغب في حجز الشقة الأنيقة (${apartmentData.title_gathern}) من تاريخ ${ci} إلى ${co} (عدد الليالي: ${nights}، الضيوف: ${guests}). الإجمالي التقديري: ${total} ريال سعودي.`;
             waBookingBtn.href = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
         }
     }
 
-    if (checkinInput) checkinInput.addEventListener('change', calculateBooking);
-    if (checkoutInput) checkoutInput.addEventListener('change', calculateBooking);
+    // اختيار يوم الوصول يكفي لحجز ليلة واحدة: المغادرة تُضبط تلقائياً لليوم التالي
+    checkinInput.addEventListener('change', () => {
+        const ci = checkinInput.value;
+        if (ci) {
+            checkoutInput.min = addDays(ci, 1);
+            if (!checkoutInput.value || checkoutInput.value <= ci) checkoutInput.value = addDays(ci, 1);
+        }
+        calculateBooking();
+    });
+    checkoutInput.addEventListener('change', calculateBooking);
     if (guestsInput) guestsInput.addEventListener('change', calculateBooking);
 
-    // Initial calculation
     calculateBooking();
 });
+
+/* ============================================================
+   ظهور تدريجي للأقسام عند التمرير
+   يُضاف الصنف بالسكربت فقط، فإن تعطّل السكربت تبقى الأقسام ظاهرة.
+   يُتجاوز لمن فعّل تقليل الحركة في جهازه.
+   ============================================================ */
+(function () {
+    if (!('IntersectionObserver' in window)) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    function init() {
+        const els = document.querySelectorAll('.gallery-grid, .card-section, .booking-widget, .site-footer');
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach((e) => {
+                if (!e.isIntersecting) return;
+                e.target.classList.add('in');
+                io.unobserve(e.target);
+            });
+        }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+        els.forEach((el) => {
+            el.classList.add('reveal');
+            io.observe(el);
+        });
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+})();
 
 /* ============================================================
    إبقاء عناوين المنصات واسم المضيف في سطر واحد دائماً

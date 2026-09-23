@@ -53,16 +53,9 @@
                     <path d="M10.4 21v-3.4h1.9V21"/>
                 </svg>
                 RentAPA
-                <span class="brand-badge">
-                    <svg class="ico" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.2c0 4.3-3 8.3-7.5 9.8-4.5-1.5-7.5-5.5-7.5-9.8V6z"/><path d="M9 12.2l2.1 2.1L15.3 10"/></svg>
-                    موثّق رسميًا
-                </span>
             </a>
+            <!-- رابط لوحة التحكم أُزيل من الصفحة العامة — تُفتح مباشرة عبر /admin -->
             <div class="nav-actions">
-                <a href="admin.html" class="btn-owner" title="لوحة تحكم المالك">
-                    <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-                    لوحة التحكم
-                </a>
                 <a href="https://wa.me/966549814764" target="_blank" class="btn-whatsapp">
                     <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
                     للحجز
@@ -341,21 +334,27 @@
 
             <!-- Right Column: Interactive Booking Widget -->
             <div>
-                <div class="booking-widget">
+                <div class="booking-widget" id="booking">
+                    <!-- السعر يظهر بعد اختيار اليوم: وسط الأسبوع أو الويكند (الأسعار في apartments.json) -->
                     <div class="price-header">
-                        <span class="price-val">294</span>
-                        <span class="price-unit">ريال سعودي / ليلة</span>
+                        <span class="price-val" id="price-val">220</span>
+                        <span class="price-unit" id="price-unit">ريال / ليلة وسط الأسبوع</span>
                     </div>
+                    <div class="price-hint" id="price-hint">ليلتا الخميس والجمعة 280 ريال • اختر تاريخ الوصول لعرض السعر</div>
 
                     <div class="calculator-form">
-                        <div class="form-group">
-                            <label>تاريخ الوصول (Check-in)</label>
-                            <input type="date" id="checkin" class="form-control" dir="ltr">
-                        </div>
-
-                        <div class="form-group">
-                            <label>تاريخ المغادرة (Check-out)</label>
-                            <input type="date" id="checkout" class="form-control" dir="ltr">
+                        <!-- التاريخان جنباً إلى جنب: الحقل الأصلي شفاف فوق عرض منسّق بالعربية -->
+                        <div class="date-row">
+                            <label class="date-field" for="checkin">
+                                <span class="date-lbl">الوصول</span>
+                                <span class="date-val is-empty" id="checkin-view">اختر التاريخ</span>
+                                <input type="date" id="checkin" aria-label="تاريخ الوصول">
+                            </label>
+                            <label class="date-field" for="checkout">
+                                <span class="date-lbl">المغادرة</span>
+                                <span class="date-val is-empty" id="checkout-view">اختر التاريخ</span>
+                                <input type="date" id="checkout" aria-label="تاريخ المغادرة">
+                            </label>
                         </div>
 
                         <div class="form-group">
@@ -367,14 +366,15 @@
                             </select>
                         </div>
 
-                        <div class="calc-summary">
+                        <div class="calc-summary" id="calc-summary" hidden>
                             <div class="calc-row">
                                 <span>مدة الإقامة:</span>
-                                <span id="nights-count">1 ليلة</span>
+                                <span id="nights-count">—</span>
                             </div>
+                            <div id="nights-breakdown"></div>
                             <div class="calc-row total">
                                 <span>الإجمالي التقديري:</span>
-                                <span id="total-amount">294 SAR</span>
+                                <span id="total-amount">—</span>
                             </div>
                         </div>
 
@@ -396,6 +396,10 @@
     <footer class="site-footer">
         <div class="footer-content">
             <div class="footer-brand">شقة متكاملة وأنيقة بدخول ذكي</div>
+            <span class="footer-verified">
+                <svg class="ico" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.2c0 4.3-3 8.3-7.5 9.8-4.5-1.5-7.5-5.5-7.5-9.8V6z"/><path d="M9 12.2l2.1 2.1L15.3 10"/></svg>
+                موثّق رسميًا
+            </span>
             <p>الرياض - حي السليمانية • 7905 عبدالحميد الكاتب (RHSA7905) • قرب المترو والمستشفيات</p>
             <p style="margin-top: 8px; font-size: 12px;">مالك العقار: محمد إبراهيم الربيش | رقم الجوال: 0549814764 | توثيق ترخيص: 50034291</p>
             <p style="margin-top: 15px; font-size: 11px; opacity: 0.7;">
