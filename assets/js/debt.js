@@ -1,13 +1,11 @@
 /* ============================================================
    حاسبة تحصيل الدين — صفحة خاصة بالمالك
-   كلمة السر الافتراضية: Debt2026
-   لتغييرها: احسب SHA-256 للكلمة الجديدة وضعها في PASS_HASH
-   (مثال في الطرفية: echo -n "كلمتك" | shasum -a 256)
-   ملاحظة: الحماية هنا حماية بسيطة من طرف المتصفح لأن الموقع ثابت
-   (بدون سيرفر)، وتكفي لإخفاء الصفحة عن الزوار العاديين.
+   الدخول: كلمة مرور حساب المالك في Supabase (تُتحقق على الخادم)، أو الوجه/البصمة
+   على جهاز سبق تفعيله فيه، أو جلسة مفتوحة من لوحة التحكم (owner-gate.js).
+   أُزيلت كلمة السر الخاصة بهذه الصفحة وبصمتها SHA-256: كانتا في هذا الملف العام،
+   والبصمة لرمز قصير تُكسر بالتجربة في ثوانٍ.
    ============================================================ */
 
-const PASS_HASH = '30b0f086f1c4acdb9d65424d459a492dac97564eb310abcec8b1f7f1a4e54460';
 const SESSION_KEY = 'debt_unlocked_v1';
 const PAYMENTS_KEY = 'debt_payments_v1';
 const BOOKINGS_KEY = 'debt_bookings_v1';
@@ -28,10 +26,6 @@ const MONTH_NAMES = ['الشهر 1', 'الشهر 2', 'الشهر 3', 'الشهر
 
 /* ---------- أدوات مساعدة ---------- */
 
-async function sha256(text) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 const fmt = n => (Math.round(n * 100) / 100).toLocaleString('en-US', {
     minimumFractionDigits: 0, maximumFractionDigits: 2
@@ -104,17 +98,18 @@ function initLock() {
         tryFace();
     }
 
-    /* الرمز الاحتياطي الثابت أُزيل (كان مكتوباً في ملف عام). يُقبل رمز هذه الصفحة،
-       أو كلمة مرور حساب المالك في Supabase — كلمة واحدة لكل الصفحات */
+    /* الرموز الثابتة أُزيلت (كانت مكتوبة في ملف عام). الدخول بكلمة مرور حساب
+       المالك في Supabase فقط — كلمة واحدة لكل الصفحات، يتحقق منها الخادم */
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const raw = input.value.trim();
         if (!raw) return;
 
-        const hash = await sha256(raw);
-        if (hash === PASS_HASH) return unlock();
-
         const client = getSB();
+        if (!client) {
+            error.textContent = '⛔ تعذّر الاتصال بالخادم — تحقق من الإنترنت';
+            return;
+        }
         if (gate && gate.signInOwner && client) {
             try {
                 const { error: authErr } = await gate.signInOwner(client, raw);
