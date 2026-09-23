@@ -1230,12 +1230,17 @@
                     <input class="input" id="ics-out" readonly dir="ltr" value="${escapeHtml(url || (icsToken === null ? 'جارٍ التحميل…' : icsTokenError))}">
                     <button class="btn btn-ghost btn-sm" id="btn-copy-ics"${url ? '' : ' disabled'}>نسخ</button>
                 </div>
-            </div>` + state.syncFeeds.map((f) => `
+            </div>
+            ${serverSync === null ? '' : `<p style="font-size:12px;font-weight:600;margin:-4px 0 10px;color:${serverSync ? 'var(--ok)' : 'var(--text-dim)'}">
+                ${serverSync
+                    ? '🔄 المزامنة تلقائية من الخادم كل 15 دقيقة — حتى لو لم تفتح اللوحة'
+                    : 'المزامنة تتم عند فتح التقويم فقط — طبّق الهجرة 0010 لتصبح تلقائية من الخادم'}
+            </p>`}` + state.syncFeeds.map((f) => `
             <div class="list-item">
                 <div class="li-icon">🔗</div>
                 <div class="li-body">
                     <h4>${escapeHtml(f.name)}</h4>
-                    <p>${f.url ? escapeHtml(f.url.slice(0, 46)) + '…' : 'لم يُربط بعد'}${f.lastSync ? ' • آخر مزامنة ' + relTime(f.lastSync) : ''}${f.lastError ? ` • <span style="color:var(--danger)">${escapeHtml(f.lastError)}</span>` : ''}</p>
+                    <p>${f.url ? escapeHtml(f.url.slice(0, 46)) + '…' : 'لم يُربط بعد'}${f.lastSync ? ' • آخر مزامنة ' + relTime(f.lastSync) : ''}${f.lastResult && !f.lastError && (f.lastResult.added || f.lastResult.removed) ? ` • ${f.lastResult.added || 0} جديد، ${f.lastResult.removed || 0} ملغى` : ''}${f.lastError ? ` • <span style="color:var(--danger)">${escapeHtml(f.lastError)}</span>` : ''}</p>
                 </div>
                 <div class="li-side" style="flex-direction:row;gap:6px">
                     ${f.url ? `<button class="btn btn-ghost btn-sm" data-sync="${f.id}">مزامنة الآن</button>` : ''}
@@ -1266,10 +1271,11 @@
         // الرمز يُحمَّل مرة واحدة ثم تُعاد كتابة القائمة بالرابط الجاهز
         if (icsToken === null) loadIcsToken().then(() => { if ($('#sync-list')) renderSyncList(); });
 
-        // مزامنة تلقائية صامتة عند أول فتح للتقويم — لكل رابط مضى على مزامنته أكثر من ساعة
+        // مزامنة تلقائية صامتة عند أول فتح للتقويم — لكل رابط مضى على مزامنته أكثر من ساعة.
+        // عند تفعيل المزامنة من الخادم (0010) لا حاجة لها: المهمة المجدولة تتولاها كل 15 دقيقة
         if (!autoSyncStarted) {
             autoSyncStarted = true;
-            syncAllFeeds(true);
+            (feedsReady || Promise.resolve()).then(() => { if (!serverSync) syncAllFeeds(true); });
         }
     }
 
@@ -1302,8 +1308,109 @@
         return r.text();
     }
 
+    /* ---- المزامنة من الخادم (الهجرة 0010) ----
+       روابط المنصات تُحفظ في جدول ical_feeds بدل هذا المتصفح، ومهمة مجدولة في Supabase
+       تستدعي /api/ical-sync كل 15 دقيقة — فتصل حجوزات جاذر إن وAirbnb للموقع دون فتح اللوحة.
+       إن لم تُطبَّق الهجرة بعد تبقى المزامنة القديمة من المتصفح كما هي (serverSync = false). */
+    let serverSync = null;      // null لم يُحدَّد بعد • true الروابط في القاعدة • false الوضع القديم
+    let syncKey = null;
+    let feedsReady = null;
+
+    const feedFromRow = (r) => ({
+        id: r.id, name: r.name, platform: r.platform, url: r.url || '',
+        lastSync: r.last_sync || '', lastError: r.last_error || '', lastResult: r.last_result || null,
+    });
+    const feedToRow = (f) => ({ id: f.id, name: f.name, platform: feedPlatform(f), url: f.url || '' });
+
+    async function loadServerFeeds() {
+        const client = sbc();
+        if (!client) { serverSync = false; return; }
+        try {
+            let { data, error } = await client.from('ical_feeds').select('*').order('created_at');
+            if (error) throw error;
+            let rows = data || [];
+
+            /* نقل الروابط المحفوظة في هذا المتصفح إلى القاعدة: كلها إن كان الجدول فارغاً،
+               وإلا فقط رابط منصة ليس لها رابط في القاعدة (يملأ صفها الفارغ بدل تكراره) */
+            const push = rows.length
+                ? state.syncFeeds.filter((f) => f.url && !rows.some((r) => r.url && r.platform === feedPlatform(f)))
+                    .map((f) => {
+                        const empty = rows.find((r) => !r.url && r.platform === feedPlatform(f));
+                        return empty ? Object.assign(feedToRow(f), { id: empty.id, name: empty.name }) : feedToRow(f);
+                    })
+                : state.syncFeeds.map(feedToRow);
+            if (push.length) {
+                const up = await client.from('ical_feeds').upsert(push);
+                if (up.error) throw up.error;
+                ({ data, error } = await client.from('ical_feeds').select('*').order('created_at'));
+                if (error) throw error;
+                rows = data || [];
+            }
+
+            state.syncFeeds = rows.map(feedFromRow);
+            serverSync = true;
+            save();
+            if ($('#sync-list')) renderSyncList();
+        } catch (e) {
+            // الجدول غير موجود قبل تطبيق الهجرة 0010 — نبقى على المزامنة من المتصفح
+            console.warn('[ical] المزامنة من الخادم غير مفعّلة:', e);
+            serverSync = false;
+        }
+    }
+
+    async function persistFeed(feed) {
+        if (!serverSync || !feed) return;
+        const client = sbc();
+        if (!client) return;
+        const { error } = await client.from('ical_feeds').upsert(feedToRow(feed));
+        if (error) reportDbError('ical_feeds', 'تعذّر حفظ رابط المنصة', error);
+    }
+
+    async function loadSyncKey() {
+        if (syncKey) return syncKey;
+        const client = sbc();
+        if (!client) throw new Error('مكتبة قاعدة البيانات لم تُحمَّل');
+        const { data, error } = await client.from('ical_sync_key').select('key').eq('id', 1).maybeSingle();
+        if (error || !data || !data.key) throw new Error('تعذّر تحميل مفتاح المزامنة — طبّق الهجرة 0010');
+        syncKey = data.key;
+        return syncKey;
+    }
+
+    // مزامنة فورية عبر الخادم (نفس ما تفعله المهمة المجدولة) ثم تحديث القائمة والتقويم
+    async function serverSyncNow(feedId, silent) {
+        try {
+            const key = await loadSyncKey();
+            const r = await fetch('/api/ical-sync' + (feedId ? `?feed=${encodeURIComponent(feedId)}` : ''), {
+                method: 'POST',
+                headers: { 'X-Sync-Key': key },
+            });
+            let j = {};
+            try { j = await r.json(); } catch (e) { /* رد غير JSON */ }
+            if (!r.ok || !j.ok) throw new Error(j.error === 'apply migration 0010' ? 'طبّق الهجرة 0010 أولاً' : `الخادم رفض الطلب (${r.status})`);
+
+            await loadServerFeeds();
+            await loadBookings();
+            const feeds = j.feeds || [];
+            const failed = feeds.filter((f) => !f.ok);
+            const added = feeds.reduce((s, f) => s + (f.added || 0), 0);
+            const removed = feeds.reduce((s, f) => s + (f.removed || 0), 0);
+            if (failed.length) toast(`${failed[0].name}: ${failed[0].error}`, true);
+            else if (!silent) toast(added || removed ? `تمت المزامنة: ${added} جديد، ${removed} ملغى` : 'التقويم محدّث — لا تغييرات');
+            if (added) pushNotification('booking', 'مزامنة التقويم', `تم استيراد ${added} حجز من المنصات`);
+            return added;
+        } catch (e) {
+            if (!silent) toast(e.message || 'تعذّرت المزامنة', true);
+            return 0;
+        }
+    }
+
     async function syncFeed(feed, silent) {
         if (!feed || !feed.url) return 0;
+        if (serverSync) {
+            const added = await serverSyncNow(feed.id, silent);
+            renderSyncList();
+            return added;
+        }
         try {
             const text = await fetchFeedText(feed.url);
             const added = await importICSText(text, feed.name, feedPlatform(feed), silent);
@@ -3397,7 +3504,9 @@
             </div>
             <p style="font-size:12px;color:var(--text-dim);line-height:1.8">${HOWTO[platform] || HOWTO.ical}</p>
             <p style="font-size:12px;color:var(--text-dim);line-height:1.8">
-                بعد الحفظ يُجلب التقويم من المنصة عبر الخادم مباشرةً ويُعاد تلقائياً كل ساعة عند فتح التقويم.
+                بعد الحفظ يُجلب التقويم من المنصة عبر الخادم مباشرةً، ${serverSync
+                    ? 'ثم يُزامَن تلقائياً من الخادم كل 15 دقيقة حتى لو لم تفتح اللوحة.'
+                    : 'ويُعاد تلقائياً كل ساعة عند فتح التقويم.'}
                 يمكنك أيضاً رفع ملف .ics يدوياً.
             </p>
             <div class="field" id="s-text-wrap" hidden>
@@ -3420,6 +3529,7 @@
         if (unlink) unlink.addEventListener('click', () => {
             feed.url = ''; feed.lastSync = ''; feed.lastError = '';
             save();
+            persistFeed(feed);
             closeModal();
             renderSyncList();
             toast('تم فك الربط — الحجوزات المستوردة سابقاً تبقى كما هي');
@@ -3435,6 +3545,7 @@
             feed.platform = platform;
             feed.lastError = '';
             save();
+            await persistFeed(feed);   // الرابط في القاعدة حتى تجده المهمة المجدولة
             closeModal();
 
             if (text) {
@@ -3563,8 +3674,10 @@
         $('#btn-add-sync').addEventListener('click', () => {
             const name = prompt('اسم المنصة (مثال: تقويم جوجل)');
             if (!name) return;
-            state.syncFeeds.push({ id: uid(), name: name.trim(), url: '', lastSync: '' });
+            const feed = { id: uid(), name: name.trim(), url: '', lastSync: '' };
+            state.syncFeeds.push(feed);
             save();
+            persistFeed(feed);
             renderSyncList();
         });
 
@@ -3732,6 +3845,7 @@
         loadBookings();            // تحميل الحجوزات الحقيقية من Supabase
         loadExpenses();            // تحميل المصاريف الحقيقية من Supabase
         loadReviews();             // تقييمات الضيوف بانتظار الاعتماد
+        feedsReady = loadServerFeeds();   // روابط المنصات من القاعدة (المزامنة من الخادم)
         startMessagesRealtime();   // بث لحظي: رسائل الزوار الجديدة تصل بلا تحديث
 
         // جهات الاتصال أولاً، حتى تتم مقارنة التكرار قبل مزامنتها من المحادثات
