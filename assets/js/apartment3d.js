@@ -769,7 +769,7 @@ const FURNITURE = {
            - طاولة زاوية ذهبية زجاجية (ساعة وزهور) ومصباح أرضي بأرفف سوداء في الركن.
            - الكنب الرمادي على الجدار الجانبي، فوقه اللوحة التجريدية، وبجانبيه طاولتان خشبيتان.
            - طاولة القهوة الزجاجية بهيكل ذهبي هندسي في المنتصف فوق سجادة رمادية.
-           - كرسيان رماديان مقابل الكنب. */
+           - كرسيان رماديان جنوب الطاولة الزجاجية، وجههما للتلفزيون والطاولة. */
         const east = (R.sofaSide || 'east') === 'east';
         const inward = east ? -1 : 1;                                    // اتجاه داخل الغرفة
         const half = (R.T || 0.25) / 2;
@@ -781,7 +781,7 @@ const FURNITURE = {
         const sofaZ = R.z0 + Math.max(sofaLen / 2 + 0.72, R.d * 0.6);
         const sofaX = faceX + inward * (sofaDep / 2 + 0.03);
         const tableX = sofaX + inward * (sofaDep / 2 + 0.78);
-        const chairX = tableX + inward * 1.02;
+        const chairZ = sofaZ + 1.02;                                     // جنوب الطاولة، مقابل التلفزيون
         const tvX = R.mx + inward * 0.45;
         const consoleZ = northZ + 0.2;
 
@@ -831,12 +831,12 @@ const FURNITURE = {
             geoGlassTable(tableX, sofaZ, 0.86, 0.44),
             lilies(tableX, 0.46, sofaZ - 0.1, MAT.ceramic, true),
 
-            // سجادة رمادية هندسية بأهداب
-            box(2.3, 0.015, 1.9, MAT.rugGeo, tableX + inward * 0.15, 0.048, sofaZ),
+            // سجادة رمادية هندسية بأهداب تمتد تحت الطاولة والكرسيين
+            box(2.0, 0.015, 2.2, MAT.rugGeo, tableX, 0.048, sofaZ + 0.3),
 
-            // كرسيان رماديان مقابل الكنب
-            armchairPhoto(chairX, sofaZ - 0.42, -inward * Math.PI / 2),
-            armchairPhoto(chairX, sofaZ + 0.42, -inward * Math.PI / 2),
+            // كرسيان رماديان جنباً إلى جنب جنوب الطاولة، وجههما نحو الشمال (التلفزيون)
+            armchairPhoto(tableX - 0.38, chairZ, Math.PI),
+            armchairPhoto(tableX + 0.38, chairZ, Math.PI),
         ];
 
         // طاولتان جانبيتان خشبيتان على شكل C عند طرفي الكنب
