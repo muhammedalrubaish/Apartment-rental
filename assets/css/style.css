@@ -1770,7 +1770,17 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
 .apt3d-info b { display: block; font-size: 15px; color: var(--text-main, #0f172a); margin-bottom: 4px; }
 .apt3d-info span { display: block; font-size: 13px; line-height: 1.7; color: #475569; }
 
-.apt3d-note { margin-top: 10px; font-size: 12px; color: #94a3b8; }
+/* ملاحظة المجسم: نقطتان في سطرين باللون البرتقالي (primary-text يحقق تباين 4.5:1 على الأبيض) */
+.apt3d-note {
+    margin: 10px 0 0;
+    padding-inline-start: 18px;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.9;
+    color: var(--primary-text);
+    list-style: disc;
+}
+.apt3d-note li::marker { color: var(--primary); }
 
 @media (max-width: 640px) {
     .apt3d-canvas { aspect-ratio: 4 / 3; }
