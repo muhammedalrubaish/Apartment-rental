@@ -357,8 +357,8 @@
             dismissedChatPhones: [],
             fees: JSON.parse(JSON.stringify(DEFAULT_FEES)),
             syncFeeds: [
-                { id: uid(), name: 'جاذر إن (Gathern)', url: '', lastSync: '' },
-                { id: uid(), name: 'Airbnb', url: '', lastSync: '' },
+                { id: uid(), name: 'جاذر إن (Gathern)', platform: 'gathern', url: '', lastSync: '' },
+                { id: uid(), name: 'Airbnb', platform: 'airbnb', url: '', lastSync: '' },
             ],
             properties, bookings, expenses, contacts, notifications,
         };
@@ -1166,25 +1166,79 @@
         });
     }
 
+    /* ---- رمز رابط التصدير ----
+       الرابط العام /api/calendar?token=… تقرؤه المنصات بلا تسجيل دخول، والرمز
+       محفوظ في جدول ical_tokens (هجرة 0007) لا يقرؤه إلا المالك. يُولَّد مرة
+       واحدة عند أول فتح للتقويم ويبقى ثابتاً حتى لا ينقطع الربط في المنصات. */
+    let icsToken = null;          // null = لم يُحمَّل بعد، '' = تعذّر
+    let icsTokenError = '';
+
+    function randomToken() {
+        const a = new Uint8Array(24);
+        crypto.getRandomValues(a);
+        return Array.from(a, (x) => x.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function loadIcsToken() {
+        if (icsToken !== null) return icsToken;
+        const client = sbc();
+        if (!client) { icsToken = ''; icsTokenError = 'مكتبة قاعدة البيانات لم تُحمَّل'; return ''; }
+
+        try {
+            const { data, error } = await client.from('ical_tokens').select('token').eq('id', 1).maybeSingle();
+            if (error) throw error;
+            if (data && data.token) { icsToken = data.token; return icsToken; }
+
+            const token = randomToken();
+            const ins = await client.from('ical_tokens').insert({ id: 1, token }).select('token').single();
+            if (ins.error) throw ins.error;
+            icsToken = ins.data.token;
+            return icsToken;
+        } catch (e) {
+            console.error('[ical] تعذّر تحميل رمز التصدير:', e);
+            icsToken = '';
+            const code = (e && e.code) || '';
+            icsTokenError = (code === '42P01' || code === 'PGRST205' || /ical_tokens/.test(e && e.message || ''))
+                ? 'طبّق الهجرة 0007 في Supabase أولاً (جدول ical_tokens)'
+                : (AUTH_ERROR_CODES.indexOf(code) !== -1 ? 'سجّل الدخول لعرض رابط التصدير' : 'تعذّر تحميل رابط التصدير');
+            return '';
+        }
+    }
+
+    function exportUrl() {
+        return icsToken ? `${location.origin}/api/calendar?token=${icsToken}` : '';
+    }
+
+    /* منصة الرابط تُستنتج من اسمه — الروابط القديمة المحفوظة محلياً بلا حقل platform */
+    function feedPlatform(f) {
+        if (f.platform) return f.platform;
+        if (/airbnb/i.test(f.name)) return 'airbnb';
+        if (/gathern|جاذر/i.test(f.name)) return 'gathern';
+        return 'ical';
+    }
+
+    let autoSyncStarted = false;
+
     function renderSyncList() {
         const zone = $('#sync-list');
-        const exportUrl = location.origin + location.pathname.replace('admin.html', '') + 'calendar.ics';
+        const url = exportUrl();
 
         zone.innerHTML = `
             <div class="field" style="margin-bottom:14px">
                 <label>رابط التصدير (ألصقه في منصات الحجز)</label>
                 <div style="display:flex;gap:8px">
-                    <input class="input" id="ics-out" readonly value="${escapeHtml(exportUrl)}">
-                    <button class="btn btn-ghost btn-sm" id="btn-copy-ics">نسخ</button>
+                    <input class="input" id="ics-out" readonly dir="ltr" value="${escapeHtml(url || (icsToken === null ? 'جارٍ التحميل…' : icsTokenError))}">
+                    <button class="btn btn-ghost btn-sm" id="btn-copy-ics"${url ? '' : ' disabled'}>نسخ</button>
                 </div>
             </div>` + state.syncFeeds.map((f) => `
             <div class="list-item">
                 <div class="li-icon">🔗</div>
                 <div class="li-body">
                     <h4>${escapeHtml(f.name)}</h4>
-                    <p>${f.url ? escapeHtml(f.url.slice(0, 46)) + '…' : 'لم يُربط بعد'}${f.lastSync ? ' • آخر مزامنة ' + relTime(f.lastSync) : ''}</p>
+                    <p>${f.url ? escapeHtml(f.url.slice(0, 46)) + '…' : 'لم يُربط بعد'}${f.lastSync ? ' • آخر مزامنة ' + relTime(f.lastSync) : ''}${f.lastError ? ` • <span style="color:var(--danger)">${escapeHtml(f.lastError)}</span>` : ''}</p>
                 </div>
-                <div class="li-side">
+                <div class="li-side" style="flex-direction:row;gap:6px">
+                    ${f.url ? `<button class="btn btn-ghost btn-sm" data-sync="${f.id}">مزامنة الآن</button>` : ''}
                     <button class="btn btn-ghost btn-sm" data-feed="${f.id}">${f.url ? 'تعديل' : 'ربط'}</button>
                 </div>
             </div>`).join('');
@@ -1201,6 +1255,76 @@
         $$('[data-feed]', zone).forEach((btn) => {
             btn.addEventListener('click', () => openFeedForm(state.syncFeeds.find((f) => f.id === btn.dataset.feed)));
         });
+
+        $$('[data-sync]', zone).forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                await syncFeed(state.syncFeeds.find((f) => f.id === btn.dataset.sync), false);
+            });
+        });
+
+        // الرمز يُحمَّل مرة واحدة ثم تُعاد كتابة القائمة بالرابط الجاهز
+        if (icsToken === null) loadIcsToken().then(() => { if ($('#sync-list')) renderSyncList(); });
+
+        // مزامنة تلقائية صامتة عند أول فتح للتقويم — لكل رابط مضى على مزامنته أكثر من ساعة
+        if (!autoSyncStarted) {
+            autoSyncStarted = true;
+            syncAllFeeds(true);
+        }
+    }
+
+    /* ---- مزامنة رابط منصة ----
+       الجلب يمر عبر /api/ical-fetch لأن المتصفح يمنع قراءة نطاق المنصة مباشرة (CORS)،
+       وتلك النقطة تتحقق من جلسة المالك قبل أي جلب. */
+    async function fetchFeedText(url) {
+        const client = sbc();
+        if (!client) throw new Error('مكتبة قاعدة البيانات لم تُحمَّل');
+        const { data } = await client.auth.getSession();
+        const jwt = data && data.session && data.session.access_token;
+        if (!jwt) throw new Error('سجّل الدخول أولاً');
+
+        const r = await fetch(`/api/ical-fetch?url=${encodeURIComponent(url)}`, {
+            headers: { Authorization: `Bearer ${jwt}` },
+        });
+        if (!r.ok) {
+            let msg = `الخادم رفض الطلب (${r.status})`;
+            try { const j = await r.json(); if (j && j.error) msg = j.error; } catch (e) { /* نص غير JSON */ }
+            const AR = {
+                unauthorized: 'انتهت الجلسة — سجّل الدخول من جديد',
+                'bad url': 'الرابط غير صالح',
+                'https public url required': 'يجب أن يبدأ الرابط بـ https',
+                'not an ics calendar': 'الرابط لا يعيد ملف تقويم iCal',
+                timeout: 'المنصة لم تستجب في الوقت المحدد',
+                'calendar too large': 'ملف التقويم أكبر من المتوقع',
+            };
+            throw new Error(AR[msg] || (/^platform responded/.test(msg) ? 'المنصة ردّت بخطأ ' + msg.split(' ').pop() : msg));
+        }
+        return r.text();
+    }
+
+    async function syncFeed(feed, silent) {
+        if (!feed || !feed.url) return 0;
+        try {
+            const text = await fetchFeedText(feed.url);
+            const added = await importICSText(text, feed.name, feedPlatform(feed), silent);
+            feed.lastSync = new Date().toISOString();
+            feed.lastError = '';
+            save();
+            renderSyncList();
+            return added;
+        } catch (e) {
+            feed.lastError = e.message || 'تعذّرت المزامنة';
+            save();
+            renderSyncList();
+            if (!silent) toast(`${feed.name}: ${feed.lastError}`, true);
+            return 0;
+        }
+    }
+
+    async function syncAllFeeds(silent) {
+        const hour = 60 * 60 * 1000;
+        const due = state.syncFeeds.filter((f) => f.url && (!f.lastSync || Date.now() - new Date(f.lastSync) > hour));
+        for (const f of due) await syncFeed(f, silent);
     }
 
     /* ---- تصدير واستيراد iCal ---- */
@@ -1260,22 +1384,39 @@
         return out;
     }
 
-    async function importICSText(text, feedName) {
+    /* استيراد أحداث iCal كحجوزات.
+       - platform: مصدر الحجز المستورد (gathern / airbnb / ical) ليأخذ لون المنصة في التقويم.
+       - أي حدث يتقاطع مع حجز قائم يُتجاهل: يمنع التكرار، ويمنع أيضاً ارتداد حجوزاتنا
+         التي صدّرناها للمنصة وأعادتها هي إلينا كأيام «غير متاحة».
+       - أحداث «Not available» في Airbnb ليست حجوزات بل حجب مستورد من تقاويم أخرى (منها تقويمنا). */
+    async function importICSText(text, feedName, platform, silent) {
         const events = parseICS(text);
         if (!events.length) {
-            toast('لم يُعثر على حجوزات في الملف', true);
+            if (!silent) toast('لم يُعثر على حجوزات في الملف', true);
             return 0;
         }
 
+        const src = platform || 'ical';
+        const platformLabel = SOURCE_LABEL[src] || feedName || 'iCal';
         let added = 0;
         for (const ev of events) {
-            const dup = state.bookings.some((b) => b.checkin === ev.checkin && b.checkout === ev.checkout);
-            if (dup) continue;
+            if (ev.checkout <= ev.checkin) continue;
+            if (/not available|unavailable|غير متاح/i.test(ev.guest)) continue;
+
+            const overlap = state.bookings.some((b) => (
+                b.status !== 'cancelled' && ev.checkin < b.checkout && ev.checkout > b.checkin
+            ));
+            if (overlap) continue;
+
+            // Airbnb يكتب "Reserved" بلا اسم — نعرض اسم المنصة بدلاً منه
+            const guest = /^(reserved|booked|محجوز)$/i.test(ev.guest.trim()) ? `ضيف ${platformLabel}` : ev.guest;
+
             const booking = await createBooking({
                 propertyId: state.properties[0]?.id || 'p1',
-                guest: ev.guest, phone: '', source: 'ical',
+                guest, phone: '', source: src,
                 checkin: ev.checkin, checkout: ev.checkout,
-                total: 0, status: 'confirmed', note: 'مستورد من ' + (feedName || 'ملف iCal'),
+                total: 0, commission: 0, status: 'confirmed',
+                note: 'مستورد من ' + (feedName || 'ملف iCal') + (ev.uid ? ` • UID: ${ev.uid}` : ''),
             });
             if (!booking) continue;
             state.bookings.push(booking);
@@ -1286,9 +1427,10 @@
             pushNotification('booking', 'مزامنة التقويم', `تم استيراد ${added} حجز من ${feedName || 'ملف iCal'}`);
             save();
             renderCalendar();
+            updateBadges();
         }
 
-        toast(added ? `تمت إضافة ${added} حجز` : 'كل الحجوزات موجودة مسبقاً');
+        if (!silent || added) toast(added ? `تمت إضافة ${added} حجز من ${feedName || 'الملف'}` : 'كل الحجوزات موجودة مسبقاً');
         return added;
     }
 
@@ -3162,42 +3304,73 @@
     function openFeedForm(feed) {
         if (!feed) return;
 
+        const platform = feedPlatform(feed);
+        const HOWTO = {
+            airbnb: 'في تطبيق Airbnb: التقويم ← الإعدادات (⚙) ← مزامنة التقويمات ← «تصدير التقويم» وانسخ الرابط. وفي الصفحة نفسها «استيراد تقويم» ألصق رابط التصدير من موقعنا.',
+            gathern: 'في جاذر إن: إدارة الوحدة ← التقويم ← ربط التقويم (iCal) ← انسخ رابط التصدير من جاذر إن، وألصق رابط التصدير من موقعنا في خانة الاستيراد.',
+            ical: 'ألصق رابط تقويم iCal العام (ينتهي عادةً بـ .ics).',
+        };
+
         openModal('ربط ' + feed.name, `
             <div class="field">
                 <label>رابط تقويم iCal الخاص بالمنصة</label>
-                <input class="input" id="s-url" value="${escapeHtml(feed.url || '')}" placeholder="https://…/calendar.ics" dir="ltr">
+                <input class="input" id="s-url" value="${escapeHtml(feed.url || '')}" placeholder="https://…/calendar.ics" dir="ltr" inputmode="url" autocomplete="off">
             </div>
+            <p style="font-size:12px;color:var(--text-dim);line-height:1.8">${HOWTO[platform] || HOWTO.ical}</p>
             <p style="font-size:12px;color:var(--text-dim);line-height:1.8">
-                يُحفظ الرابط للمزامنة. لاستيراد الحجوزات الآن، الصق محتوى ملف ICS في الحقل أدناه أو ارفع الملف —
-                لأن متصفحك يمنع القراءة المباشرة من نطاق آخر (CORS).
+                بعد الحفظ يُجلب التقويم من المنصة عبر الخادم مباشرةً ويُعاد تلقائياً كل ساعة عند فتح التقويم.
+                يمكنك أيضاً رفع ملف .ics يدوياً.
             </p>
-            <div class="field">
-                <label>لصق محتوى ملف ICS (اختياري)</label>
+            <div class="field" id="s-text-wrap" hidden>
+                <label>محتوى ملف ICS</label>
                 <textarea class="input" id="s-text" placeholder="BEGIN:VCALENDAR…" dir="ltr"></textarea>
             </div>
-            <button class="btn btn-ghost btn-sm" id="s-file">📂 رفع ملف .ics بدلاً من ذلك</button>`,
-            `<button class="btn btn-ghost" id="s-cancel">إلغاء</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="s-file">📂 رفع ملف .ics بدلاً من ذلك</button>`,
+            `${feed.url ? '<button class="btn btn-ghost" id="s-unlink" style="color:var(--danger)">فك الربط</button>' : ''}
+             <button class="btn btn-ghost" id="s-cancel">إلغاء</button>
              <button class="btn btn-primary" id="s-save">حفظ ومزامنة</button>`);
 
         $('#s-cancel').addEventListener('click', closeModal);
         $('#s-file').addEventListener('click', () => pickFile('.ics', (text) => {
+            $('#s-text-wrap').hidden = false;
             $('#s-text').value = text;
             toast('تم تحميل الملف، اضغط حفظ ومزامنة');
         }));
 
-        $('#s-save').addEventListener('click', () => {
-            feed.url = $('#s-url').value.trim();
-            const text = $('#s-text').value.trim();
-
-            if (text) {
-                importICSText(text, feed.name);
-                feed.lastSync = new Date().toISOString();
-            }
-
+        const unlink = $('#s-unlink');
+        if (unlink) unlink.addEventListener('click', () => {
+            feed.url = ''; feed.lastSync = ''; feed.lastError = '';
             save();
             closeModal();
-            renderCalendar();
-            toast('تم حفظ إعدادات المزامنة');
+            renderSyncList();
+            toast('تم فك الربط — الحجوزات المستوردة سابقاً تبقى كما هي');
+        });
+
+        $('#s-save').addEventListener('click', async () => {
+            const url = $('#s-url').value.trim();
+            const text = $('#s-text').value.trim();
+
+            if (url && !/^https:\/\//i.test(url)) return toast('يجب أن يبدأ الرابط بـ https://', true);
+
+            feed.url = url;
+            feed.platform = platform;
+            feed.lastError = '';
+            save();
+            closeModal();
+
+            if (text) {
+                await importICSText(text, feed.name, platform, false);
+                feed.lastSync = new Date().toISOString();
+                save();
+            }
+
+            if (url) {
+                toast('جارٍ جلب التقويم من ' + feed.name + '…');
+                await syncFeed(feed, false);
+            } else {
+                renderSyncList();
+                toast('تم حفظ إعدادات المزامنة');
+            }
         });
     }
 
