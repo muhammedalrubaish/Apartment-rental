@@ -809,6 +809,29 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
     margin: 10px 0;
 }
 
+/* تنبيه الأيام المحجوزة (من تقويم الموقع المتزامن مع جاذر إن وAirbnb) */
+.booking-unavailable {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+    animation: bu-shake .35s ease;
+}
+.booking-unavailable[hidden] { display: none; }
+.booking-unavailable .ico { width: 26px; height: 26px; flex-shrink: 0; }
+.booking-unavailable strong { display: block; font-size: 15px; font-weight: 800; }
+.booking-unavailable small { display: block; font-size: 12.5px; color: #991b1b; opacity: .85; margin-top: 2px; }
+@keyframes bu-shake { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { .booking-unavailable { animation: none; } }
+
+/* زر الحجز معطّل عند تعارض الأيام */
+.btn-whatsapp.is-disabled { opacity: .45; filter: grayscale(.6); pointer-events: none; }
+
 .calc-row {
     display: flex;
     justify-content: space-between;
@@ -1726,6 +1749,8 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
 }
 
 .apt3d-chip-label { display: none; }
+/* الزر المخفي (مثل VR على الأجهزة غير الداعمة) لا يأخذ مكاناً ولا يعترض اللمس */
+.apt3d-chip[hidden] { display: none; }
 
 .apt3d-chip:hover { background: var(--primary-light); transform: translateY(-1px); }
 
@@ -1751,7 +1776,10 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
 
 /* على الشاشات الضيقة: توزيع متساوٍ حتى يظهر الشريط كاملاً بسطر واحد دون تمرير */
 @media (max-width: 560px) {
-    .apt3d-chips { overflow-x: visible; justify-content: space-between; }
+    .apt3d-chips { overflow-x: visible; flex-wrap: wrap; justify-content: space-between; gap: 3px; }
+    /* تسعة أزرار في سطر واحد على الجوال: تتقلّص بالتساوي، وعلى الشاشات الصغيرة جداً تلتف لسطر ثانٍ بدل أن تخرج عن الإطار */
+    .apt3d-chip { flex: 1 1 0; width: auto; min-width: 28px; max-width: 34px; height: auto; aspect-ratio: 1; }
+    .apt3d-chip .ico { width: 16px; height: 16px; }
 }
 
 .apt3d-stage { position: relative; }
@@ -2337,3 +2365,33 @@ body.chat-open .floating-wa { display: none; }
     .chat-compose input,
     .chat-field input { font-size: 16px; }
 }
+
+/* ==========================================================================
+   وضع التجوّل داخل المجسم: عصا تحكم افتراضية تظهر حيث يلمس الإصبع
+   ========================================================================== */
+.apt3d-joy {
+    position: absolute;
+    width: 110px;
+    height: 110px;
+    margin: -55px 0 0 -55px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    background: rgba(20, 20, 20, 0.18);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+    z-index: 3;
+}
+.apt3d-joy[hidden] { display: none; }
+.apt3d-joy span {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: var(--primary);
+    box-shadow: 0 4px 14px rgba(242, 98, 42, 0.45);
+    transform: translate(-50%, -50%);
+}
+.apt3d-section.is-walk .apt3d-canvas { cursor: crosshair; }

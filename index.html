@@ -155,7 +155,7 @@
         <section class="card-section apt3d-section">
             <h3 class="card-title"><svg class="ico" viewBox="0 0 24 24"><path d="M12 2.8 20.5 7v10L12 21.2 3.5 17V7z"/><path d="M3.5 7 12 11.4 20.5 7M12 11.4V21.2"/></svg> مجسم ثلاثي الأبعاد للشقة (3D)</h3>
             <p class="description-text text-justify" style="margin-bottom: 12px;">
-                تجوّل في مخطط الشقة قبل الحجز: اسحب للتدوير، وقرّب بعجلة الفأرة أو بإصبعين. اضغط على أي غرفة لعرض مساحتها، وعلى <b>الباب ليُفتح</b>، وعلى <b>التلفزيون ليعمل</b>.
+                تجوّل في مخطط الشقة قبل الحجز: اسحب للتدوير، وقرّب بعجلة الفأرة أو بإصبعين. اضغط على أي غرفة لعرض مساحتها، وعلى <b>الباب ليُفتح</b>، وعلى <b>التلفزيون ليعمل</b>. ولتمشي داخلها كأنك هناك اضغط <b>زر التجوّل</b>.
             </p>
 
             <div class="apt3d-chips">
@@ -165,6 +165,8 @@
                 <button type="button" class="apt3d-chip" data-room="kitchen" title="المطبخ" aria-label="المطبخ"><svg class="ico ico-inherit" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.5" cy="8.5" r="1.6"/><circle cx="15.5" cy="8.5" r="1.6"/><path d="M6 14.5h12"/></svg> <span class="apt3d-chip-label">المطبخ</span></button>
                 <button type="button" class="apt3d-chip" data-room="bath" title="دورة المياه" aria-label="دورة المياه"><svg class="ico ico-inherit" viewBox="0 0 24 24"><path d="M6 13V6.5A3.5 3.5 0 0 1 9.5 3h1"/><path d="M3 13h10M5.5 17v.5M8 16.5v.5M10.5 17v.5M6.5 20.5v.5M9.5 20v.5"/></svg> <span class="apt3d-chip-label">دورة المياه</span></button>
                 <button type="button" class="apt3d-chip alt apt3d-chip-icon" id="apt3d-rotate" title="إيقاف الدوران" aria-label="إيقاف الدوران"><svg class="ico ico-inherit" viewBox="0 0 24 24"><path d="M9.5 5v14M14.5 5v14"/></svg></button>
+                <button type="button" class="apt3d-chip alt apt3d-chip-icon" id="apt3d-walk" title="تجوّل داخل الشقة" aria-label="تجوّل داخل الشقة"><svg class="ico ico-inherit" viewBox="0 0 24 24"><circle cx="13.5" cy="4.5" r="2"/><path d="M10 21l2.2-6.2 2.8 2.7V21M8 12.5l2.6-3.6 3.6.9 2.3 3.2M12.2 14.8l-1.3-4.9"/></svg></button>
+                <button type="button" class="apt3d-chip alt apt3d-chip-icon" id="apt3d-vr" title="نظارة الواقع الافتراضي (VR)" aria-label="نظارة الواقع الافتراضي" hidden><svg class="ico ico-inherit" viewBox="0 0 24 24"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h15A1.5 1.5 0 0 1 21 8.5V15a1.5 1.5 0 0 1-1.5 1.5h-4.2L12 13.5l-3.3 3H4.5A1.5 1.5 0 0 1 3 15z"/><circle cx="7.8" cy="11.5" r="1.3"/><circle cx="16.2" cy="11.5" r="1.3"/></svg></button>
                 <button type="button" class="apt3d-chip alt apt3d-chip-icon" id="apt3d-full" title="عرض بملء الشاشة" aria-label="عرض بملء الشاشة"><svg class="ico ico-inherit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
                 <button type="button" class="apt3d-chip alt apt3d-chip-icon" id="apt3d-reset" title="عرض كامل" aria-label="عرض كامل"><svg class="ico ico-inherit" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v4.5H8"/></svg></button>
             </div>
@@ -177,6 +179,8 @@
                     </div>
                 </div>
                 <div id="apt3d-info" class="apt3d-info"></div>
+                <!-- عصا التحكم الافتراضية لوضع التجوّل على الجوال -->
+                <div id="apt3d-joy" class="apt3d-joy" hidden><span></span></div>
             </div>
 
             <!-- ملاحظتان في سطرين باللون البرتقالي -->
@@ -372,6 +376,14 @@
                         <div class="form-group">
                             <label for="booking-note">ملاحظات <span style="font-weight:600;opacity:.75">(اختياري)</span></label>
                             <textarea id="booking-note" class="form-control" rows="2" maxlength="300" placeholder="وقت الوصول، طلبات خاصة…" style="resize:vertical;min-height:56px"></textarea>
+                        </div>
+
+                        <div class="booking-unavailable" id="booking-unavailable" role="alert" hidden>
+                            <svg class="ico ico-inherit" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M9.5 13.5l5 5M14.5 13.5l-5 5"/></svg>
+                            <div>
+                                <strong>عفواً، الأيام المختارة محجوزة</strong>
+                                <small id="booking-unavailable-hint">يرجى اختيار تواريخ أخرى</small>
+                            </div>
                         </div>
 
                         <div class="calc-summary" id="calc-summary" hidden>

@@ -1,4 +1,32 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    /* الأيام المحجوزة من تقويم الموقع (يشمل ما استُورد من جاذر إن وAirbnb).
+       دالة public_booked_ranges تُعيد التواريخ فقط — بلا أسماء ولا مبالغ (الهجرة 0008).
+       عند تعذّر الجلب لا نمنع الزائر: المالك يؤكد التوفر عبر واتساب على أي حال.
+       يبدأ الجلب مع فتح الصفحة بالتوازي مع apartments.json. */
+    let bookedRanges = [];
+    let bookedAt = 0;
+    const SB_URL = window.SUPABASE_URL || 'https://divoyxodxkioxugrphby.supabase.co';
+    const SB_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_qw9IiQ52_WFip-4gNX4lkA_CZA0VFzf';
+
+    async function loadBookedRanges() {
+        try {
+            const r = await fetch(`${SB_URL}/rest/v1/rpc/public_booked_ranges`, {
+                method: 'POST',
+                headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const rows = await r.json();
+            bookedRanges = (Array.isArray(rows) ? rows : [])
+                .filter((b) => b && b.checkin && b.checkout && b.checkout > b.checkin);
+            bookedAt = Date.now();
+        } catch (e) {
+            console.warn('تعذّر جلب الأيام المحجوزة:', e);
+        }
+    }
+
+    const bookedReady = loadBookedRanges();
+
     // 1. Fetch apartments.json data
     let apartmentData = null;
     try {
@@ -34,6 +62,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const totalAmountEl = document.getElementById('total-amount');
     const waBookingBtn = document.getElementById('btn-wa-booking');
     const noteInput = document.getElementById('booking-note');
+    const unavailableEl = document.getElementById('booking-unavailable');
+    const unavailableHint = document.getElementById('booking-unavailable-hint');
     if (!checkinInput || !checkoutInput) return;
 
     /* رسالة واتساب منسّقة: تحية للمالك ثم التفاصيل سطراً سطراً بأيقونات،
@@ -82,6 +112,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fmt = (s) => parse(s).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long' });
     const dayName = (s) => parse(s).toLocaleDateString(LOCALE, { weekday: 'long' });
 
+    // تحديث صامت إن مرّت دقيقتان منذ آخر جلب — الحجوزات قد تتغير والصفحة مفتوحة
+    function refreshBookedIfStale() {
+        if (Date.now() - bookedAt > 120000) loadBookedRanges().then(calculateBooking);
+    }
+
+    // [ci, co) يتعارض مع حجز إذا تقاطعت الليالي؛ يوم المغادرة نفسه متاح لوصول جديد
+    const conflictsWith = (ci, co) => bookedRanges.filter((b) => ci < b.checkout && co > b.checkin);
+
+    // أول يوم متاح بعد الحجوزات المتتالية التي تغطي الفترة المختارة
+    function nextFreeDay(ci) {
+        let day = ci;
+        for (let guard = 0; guard < 60; guard++) {
+            const hit = bookedRanges.find((b) => day >= b.checkin && day < b.checkout);
+            if (!hit) return day;
+            day = hit.checkout;
+        }
+        return null;
+    }
+
     const todayIso = toIso(new Date());
     checkinInput.min = todayIso;
     checkoutInput.min = addDays(todayIso, 1);
@@ -111,6 +160,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         setView(checkoutView, co);
 
         const guests = guestsInput ? guestsInput.value : 1;
+
+        // تعارض مع حجز قائم: تنبيه وتعطيل زر الواتساب بدل عرض السعر
+        const clash = ci && co && co > ci ? conflictsWith(ci, co) : [];
+        if (unavailableEl) unavailableEl.hidden = !clash.length;
+        if (waBookingBtn) {
+            waBookingBtn.classList.toggle('is-disabled', !!clash.length);
+            waBookingBtn.setAttribute('aria-disabled', clash.length ? 'true' : 'false');
+        }
+        if (clash.length) {
+            const free = nextFreeDay(ci);
+            if (unavailableHint) {
+                unavailableHint.textContent = free && free !== ci
+                    ? `أقرب موعد وصول متاح: ${fmt(free)} (${dayName(free)})`
+                    : 'يرجى اختيار تواريخ أخرى';
+            }
+            priceVal.textContent = WEEKDAY;
+            priceUnit.textContent = 'ريال / ليلة وسط الأسبوع';
+            priceHint.hidden = true;
+            summaryEl.hidden = true;
+            setWaLink(null);
+            return;
+        }
 
         if (!ci || !co || co <= ci) {
             // قبل اختيار الأيام: السعر المرجعي فقط
@@ -158,12 +229,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!checkoutInput.value || checkoutInput.value <= ci) checkoutInput.value = addDays(ci, 1);
         }
         calculateBooking();
+        refreshBookedIfStale();
     });
-    checkoutInput.addEventListener('change', calculateBooking);
+    checkoutInput.addEventListener('change', () => { calculateBooking(); refreshBookedIfStale(); });
     if (guestsInput) guestsInput.addEventListener('change', calculateBooking);
     if (noteInput) noteInput.addEventListener('input', calculateBooking);
+    // حماية إضافية: لا يُفتح واتساب إن كانت الأيام محجوزة
+    if (waBookingBtn) {
+        waBookingBtn.addEventListener('click', (e) => {
+            if (waBookingBtn.classList.contains('is-disabled')) e.preventDefault();
+        });
+    }
 
     calculateBooking();
+    bookedReady.then(calculateBooking);
 });
 
 /* ============================================================

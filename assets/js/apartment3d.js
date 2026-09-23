@@ -1090,6 +1090,7 @@ function buildApartment(scene, plan) {
     const innerH = H * 0.52;   // الجدران الداخلية — منخفضة لكشف الغرف، وتتسع للوحة فوق الكنب
 
     const pickables = [];
+    const walls = [];
     const rooms = plan.rooms || [];
     const openings = plan.openings || [];
     const windows = plan.windows || [];
@@ -1200,8 +1201,12 @@ function buildApartment(scene, plan) {
         subtract(seg).forEach((p) => {
             const len = p.to - p.from;
             const mid = (p.from + p.to) / 2;
-            if (seg.axis === 'x') scene.add(box(len, h, T, material, cx(mid), h / 2, cz(seg.at)));
-            else scene.add(box(T, h, len, material, cx(seg.at), h / 2, cz(mid)));
+            const wall = seg.axis === 'x'
+                ? box(len, h, T, material, cx(mid), h / 2, cz(seg.at))
+                : box(T, h, len, material, cx(seg.at), h / 2, cz(mid));
+            wall.userData.baseH = h;                    // الارتفاع المقطوع — وضع التجوّل يرفعه للسقف
+            walls.push(wall);
+            scene.add(wall);
         });
     });
 
@@ -1305,7 +1310,7 @@ function buildApartment(scene, plan) {
         pickables.push(g);
     });
 
-    return { pickables, rooms, doors, W, D };
+    return { pickables, rooms, doors, walls, W, D, H };
 }
 
 /* ── الإضاءة ─────────────────────────────────────────────────────── */
@@ -1408,6 +1413,8 @@ const CHIP_ICON = {
 };
 const ICON_PAUSE = svgIcon('<path d="M9.5 5v14M14.5 5v14"/>');
 const ICON_PLAY = svgIcon('<path d="M8 5.5v13l10.5-6.5z"/>');
+const ICON_WALK = svgIcon('<circle cx="13.5" cy="4.5" r="2"/><path d="M10 21l2.2-6.2 2.8 2.7V21M8 12.5l2.6-3.6 3.6.9 2.3 3.2M12.2 14.8l-1.3-4.9"/>');
+const ICON_VR = svgIcon('<path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h15A1.5 1.5 0 0 1 21 8.5V15a1.5 1.5 0 0 1-1.5 1.5h-4.2L12 13.5l-3.3 3H4.5A1.5 1.5 0 0 1 3 15z"/><circle cx="7.8" cy="11.5" r="1.3"/><circle cx="16.2" cy="11.5" r="1.3"/>');
 
 /* أزرار الغرف تُولَّد من الملف حتى تتطابق دائماً مع المخطط */
 function buildChips(rooms) {
@@ -1450,7 +1457,7 @@ function init(container, plan) {
     scene.environment = makeEnvironment(renderer);
 
     buildLights(scene, plan);
-    const { pickables, rooms, doors, W, D } = buildApartment(scene, plan);
+    const { pickables, rooms, doors, walls, W, D, H } = buildApartment(scene, plan);
     buildChips(rooms);
 
     /* الكاميرا تُؤطَّر تلقائياً على الحجم الفعلي للشقة */
@@ -1613,6 +1620,8 @@ function init(container, plan) {
         const r = rooms.find((x) => x.key === key);
         if (!g || !r) return;
 
+        if (walk.on) return teleport(r);
+
         const info = g.userData.info;
         if (infoEl) {
             infoEl.innerHTML = '<b>' + info.icon + ' ' + info.name + '</b>'
@@ -1642,6 +1651,7 @@ function init(container, plan) {
 
     const resetBtn = document.getElementById('apt3d-reset');
     if (resetBtn) resetBtn.addEventListener('click', () => {
+        if (walk.on) return exitWalk();
         document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => c.classList.remove('active'));
         resetBtn.classList.add('active');
         setTimeout(() => resetBtn.classList.remove('active'), 350);
@@ -1663,6 +1673,267 @@ function init(container, plan) {
         rotBtn.setAttribute('aria-label', label);
     });
 
+    /* ── وضع التجوّل (منظور الشخص الأول) ─────────────────────────────
+       تمشي داخل الشقة بارتفاع العين كأنها لعبة:
+       - الجوال: اسحب في النصف الأيسر للمشي (عصا تحكم)، وفي الأيمن للنظر حولك.
+       - الحاسوب: W A S D أو الأسهم للمشي، واسحب بالفأرة للنظر.
+       - الجدران ترتفع حتى السقف ويظهر سقف، وتُفتح الأبواب، ولا يمكن اختراق الجدران.
+       - الضغط على الباب أو التلفزيون أو الحنفية يعمل كالمعتاد، وأزرار الغرف تنقلك إليها. */
+    const EYE = 1.6, SPEED = 1.5, BODY = 0.22;
+    const walk = { on: false, yaw: 0, pitch: 0, keys: new Set(), joy: null, look: null, move: { x: 0, y: 0 }, openedFull: false, prevRotate: true };
+    const walkBtn = document.getElementById('apt3d-walk');
+    const joyEl = document.getElementById('apt3d-joy');
+    const section = container.closest('.apt3d-section');
+
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(0xf6f3ee, { roughness: 0.9 }));
+    ceiling.rotation.x = Math.PI / 2;                        // الوجه نحو الأسفل
+    ceiling.position.y = H;
+    ceiling.visible = false;
+    scene.add(ceiling);
+
+    let wallBoxes = [];
+    function setFullWalls(full) {
+        walls.forEach((m) => {
+            const h = full ? H : m.userData.baseH;
+            m.scale.y = h / m.userData.baseH;
+            m.position.y = h / 2;
+        });
+        ceiling.visible = full;
+        scene.updateMatrixWorld(true);
+        wallBoxes = full ? walls.map((m) => new THREE.Box3().setFromObject(m)) : [];
+    }
+
+    function blocked(x, z) {
+        return wallBoxes.some((b) => x > b.min.x - BODY && x < b.max.x + BODY && z > b.min.z - BODY && z < b.max.z + BODY);
+    }
+
+    /* نقطة البداية: خلف باب الشقة الرئيسي (القفل الذكي) مباشرة، والوجه نحو الداخل */
+    function startPoint() {
+        const main = (plan.openings || []).find((o) => o.kind === 'door' && o.lock === 'smart')
+            || (plan.openings || []).find((o) => o.kind === 'door');
+        if (main) {
+            const mid = (main.from + main.to) / 2;
+            if (main.axis === 'z') {
+                const inward = main.at < W / 2 ? 1 : -1;
+                return { x: main.at + inward * 0.8 - W / 2, z: mid - D / 2, yaw: inward > 0 ? -Math.PI / 2 : Math.PI / 2 };
+            }
+            const inward = main.at < D / 2 ? 1 : -1;
+            return { x: mid - W / 2, z: main.at + inward * 0.8 - D / 2, yaw: inward > 0 ? Math.PI : 0 };
+        }
+        return { x: 0, z: 0, yaw: 0 };
+    }
+
+    function openAllDoors() {
+        doors.forEach((d) => { if (!d.userData.open) toggleDoor(d); });
+    }
+
+    function teleport(r) {
+        const x = r.x + r.w / 2 - W / 2, z = r.z + r.d / 2 - D / 2;
+        if (!blocked(x, z)) camera.position.set(x, EYE, z);
+        document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => c.classList.toggle('active', c.dataset.room === r.key));
+        walkHint('📍 ' + r.name);
+    }
+
+    let walkHintTimer = null;
+    function walkHint(title) {
+        if (!infoEl) return;
+        const touch = matchMedia('(pointer: coarse)').matches;
+        infoEl.innerHTML = `<b>${title}</b><span>${touch
+            ? 'اسحب في النصف الأيسر للمشي، وفي الأيمن للنظر حولك'
+            : 'W A S D أو الأسهم للمشي، واسحب بالفأرة للنظر'}</span>`;
+        infoEl.classList.add('visible');
+        clearTimeout(walkHintTimer);
+        walkHintTimer = setTimeout(() => infoEl.classList.remove('visible'), 4000);
+    }
+
+    function enterWalk() {
+        if (walk.on) return;
+        if (!FULLVIEW.isOpen()) { FULLVIEW.open(); walk.openedFull = true; }
+        walk.on = true;
+        anim = null;
+        walk.prevRotate = autoRotate;
+        autoRotate = false;
+        controls.enabled = false;
+        setFullWalls(true);
+        openAllDoors();
+
+        const st = startPoint();
+        camera.position.set(st.x, EYE, st.z);
+        walk.yaw = st.yaw;
+        walk.pitch = 0;
+        camera.fov = 70;
+        camera.near = 0.05;
+        camera.updateProjectionMatrix();
+
+        if (section) section.classList.add('is-walk');
+        if (walkBtn) { walkBtn.classList.add('active'); walkBtn.title = 'إنهاء التجوّل'; walkBtn.setAttribute('aria-label', 'إنهاء التجوّل'); }
+        walkHint('🚶 وضع التجوّل');
+    }
+
+    function exitWalk() {
+        if (!walk.on) return;
+        walk.on = false;
+        walk.keys.clear();
+        walk.joy = walk.look = null;
+        walk.move.x = walk.move.y = 0;
+        if (joyEl) joyEl.hidden = true;
+        setFullWalls(false);
+        camera.fov = 45;
+        camera.near = 0.1;
+        camera.updateProjectionMatrix();
+        camera.position.copy(HOME);
+        controls.target.set(0, 0.6, 0);
+        controls.enabled = true;
+        autoRotate = walk.prevRotate;
+        if (section) section.classList.remove('is-walk');
+        if (walkBtn) { walkBtn.classList.remove('active'); walkBtn.title = 'تجوّل داخل الشقة'; walkBtn.setAttribute('aria-label', 'تجوّل داخل الشقة'); }
+        document.querySelectorAll('.apt3d-chip[data-room]').forEach((c) => c.classList.remove('active'));
+        if (walk.openedFull) { walk.openedFull = false; FULLVIEW.close(); }
+    }
+
+    // إغلاق ملء الشاشة (زر الإغلاق أو الرجوع) ينهي التجوّل أيضاً
+    FULLVIEW.onClose = () => { if (walk.on) { walk.openedFull = false; exitWalk(); } };
+
+    if (walkBtn) walkBtn.addEventListener('click', () => (walk.on ? exitWalk() : enterWalk()));
+
+    /* اللمس والفأرة أثناء التجوّل */
+    const cv = renderer.domElement;
+    cv.addEventListener('pointerdown', (e) => {
+        if (!walk.on) return;
+        const rect = cv.getBoundingClientRect();
+        const leftHalf = e.clientX < rect.left + rect.width / 2;
+        if (e.pointerType === 'touch' && leftHalf && !walk.joy) {
+            walk.joy = { id: e.pointerId, x0: e.clientX, y0: e.clientY };
+            if (joyEl) {
+                joyEl.hidden = false;
+                joyEl.style.left = (e.clientX - rect.left) + 'px';
+                joyEl.style.top = (e.clientY - rect.top) + 'px';
+                joyEl.firstElementChild.style.transform = 'translate(-50%, -50%)';
+            }
+        } else if (!walk.look) {
+            walk.look = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        }
+        try { cv.setPointerCapture(e.pointerId); } catch (err) { /* غير مدعوم */ }
+    });
+    cv.addEventListener('pointermove', (e) => {
+        if (!walk.on) return;
+        if (walk.joy && e.pointerId === walk.joy.id) {
+            const R = 55;
+            let dx = e.clientX - walk.joy.x0, dy = e.clientY - walk.joy.y0;
+            const len = Math.hypot(dx, dy);
+            if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R; }
+            walk.move.x = dx / R;
+            walk.move.y = dy / R;
+            if (joyEl) joyEl.firstElementChild.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        } else if (walk.look && e.pointerId === walk.look.id) {
+            walk.yaw -= (e.clientX - walk.look.x) * 0.005;
+            walk.pitch = Math.max(-1.2, Math.min(1.2, walk.pitch - (e.clientY - walk.look.y) * 0.004));
+            walk.look.x = e.clientX;
+            walk.look.y = e.clientY;
+        }
+    });
+    const endPointer = (e) => {
+        if (walk.joy && e.pointerId === walk.joy.id) {
+            walk.joy = null;
+            walk.move.x = walk.move.y = 0;
+            if (joyEl) joyEl.hidden = true;
+        }
+        if (walk.look && e.pointerId === walk.look.id) walk.look = null;
+    };
+    cv.addEventListener('pointerup', endPointer);
+    cv.addEventListener('pointercancel', endPointer);
+
+    const MOVE_KEYS = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' };
+    window.addEventListener('keydown', (e) => {
+        if (!walk.on || !MOVE_KEYS[e.code] || /input|textarea|select/i.test(e.target.tagName)) return;
+        walk.keys.add(MOVE_KEYS[e.code]);
+        e.preventDefault();
+    });
+    window.addEventListener('keyup', (e) => { if (MOVE_KEYS[e.code]) walk.keys.delete(MOVE_KEYS[e.code]); });
+
+    /* حركة بمحورين مع الانزلاق على الجدار عند الاصطدام */
+    function stepMove(pos, fwd, side, yaw, dt) {
+        const mag = Math.hypot(fwd, side);
+        if (mag < 0.05) return;
+        if (mag > 1) { fwd /= mag; side /= mag; }
+        const step = SPEED * dt;
+        const fx = -Math.sin(yaw), fz = -Math.cos(yaw);        // الأمام
+        const rx = Math.cos(yaw), rz = -Math.sin(yaw);         // اليمين
+        const nx = pos.x + (fx * fwd + rx * side) * step;
+        const nz = pos.z + (fz * fwd + rz * side) * step;
+        if (!blocked(nx, pos.z)) pos.x = nx;
+        if (!blocked(pos.x, nz)) pos.z = nz;
+    }
+
+    function updateWalk(dt) {
+        const k = walk.keys;
+        const fwd = -walk.move.y + (k.has('f') ? 1 : 0) - (k.has('b') ? 1 : 0);
+        const side = walk.move.x + (k.has('r') ? 1 : 0) - (k.has('l') ? 1 : 0);
+        stepMove(camera.position, fwd, side, walk.yaw, dt);
+        camera.position.y = EYE;
+        camera.rotation.set(walk.pitch, walk.yaw, 0, 'YXZ');
+    }
+
+    /* ── نظارات الواقع الافتراضي (WebXR) ──────────────────────────────
+       يظهر الزر فقط على الأجهزة الداعمة (مثل متصفح نظارة Quest).
+       تبدأ من باب الشقة، وعصا التحكم اليسرى للمشي. آيفون لا يدعم WebXR. */
+    const vrBtn = document.getElementById('apt3d-vr');
+    const xr = { base: null, pos: new THREE.Vector3() };
+    if (vrBtn && navigator.xr && navigator.xr.isSessionSupported) {
+        navigator.xr.isSessionSupported('immersive-vr').then((ok) => { vrBtn.hidden = !ok; }).catch(() => {});
+        vrBtn.addEventListener('click', async () => {
+            const current = renderer.xr.getSession && renderer.xr.getSession();
+            if (current) { current.end(); return; }
+            try {
+                const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+                if (walk.on) exitWalk();
+                renderer.xr.enabled = true;
+                renderer.xr.setReferenceSpaceType('local-floor');
+                await renderer.xr.setSession(session);
+                setFullWalls(true);
+                openAllDoors();
+                xr.base = renderer.xr.getReferenceSpace();
+                const st = startPoint();
+                xr.pos.set(st.x, 0, st.z);
+                applyXrOffset();
+                vrBtn.classList.add('active');
+                session.addEventListener('end', () => {
+                    renderer.xr.enabled = false;
+                    setFullWalls(false);
+                    vrBtn.classList.remove('active');
+                });
+            } catch (err) {
+                console.warn('[3D] تعذّر فتح وضع النظارة:', err);
+                hint('🥽 تعذّر فتح وضع النظارة على هذا الجهاز');
+            }
+        });
+    }
+
+    function applyXrOffset() {
+        if (!xr.base || typeof XRRigidTransform === 'undefined') return;
+        renderer.xr.setReferenceSpace(xr.base.getOffsetReferenceSpace(
+            new XRRigidTransform({ x: -xr.pos.x, y: 0, z: -xr.pos.z })));
+    }
+
+    function updateXr(dt) {
+        const session = renderer.xr.getSession();
+        if (!session) return;
+        let fwd = 0, side = 0;
+        for (const src of session.inputSources) {
+            const axes = src.gamepad && src.gamepad.axes;
+            if (!axes || src.handedness === 'right') continue;
+            side += axes[2] || 0;
+            fwd -= axes[3] || 0;
+        }
+        if (Math.abs(fwd) < 0.15 && Math.abs(side) < 0.15) return;
+        // اتجاه النظر الحالي من كاميرا النظارة
+        const dir = new THREE.Vector3();
+        renderer.xr.getCamera().getWorldDirection(dir);
+        const yaw = Math.atan2(-dir.x, -dir.z);
+        stepMove(xr.pos, fwd, side, yaw, dt);
+        applyXrOffset();
+    }
+
     let lastPortrait = null;
     function resize() {
         const w = container.clientWidth;
@@ -1676,7 +1947,7 @@ function init(container, plan) {
         const wasHome = camera.position.distanceTo(HOME) < 0.01;
         HOME.copy(portrait ? DIR_PORTRAIT : DIR).multiplyScalar(fitDist * need);
         // عند تغيّر نوع العرض (فتح ملء الشاشة أو إغلاقه) يُعاد التأطير دائماً
-        if (wasHome || portrait !== lastPortrait) {
+        if (!walk.on && (wasHome || portrait !== lastPortrait)) {
             camera.position.copy(HOME);
             controls.target.set(0, 0.6, 0);
         }
@@ -1689,7 +1960,11 @@ function init(container, plan) {
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
         const dt = Math.min(clock.getDelta(), 0.05);
-        if (anim) {
+        if (renderer.xr.isPresenting) {
+            updateXr(dt);
+        } else if (walk.on) {
+            updateWalk(dt);
+        } else if (anim) {
             anim.t = Math.min(anim.t + dt * 1.6, 1);
             const e = anim.t < 0.5 ? 2 * anim.t * anim.t : 1 - Math.pow(-2 * anim.t + 2, 2) / 2;
             controls.target.lerpVectors(anim.from, anim.to, e);
@@ -1711,7 +1986,7 @@ function init(container, plan) {
 
         updateTv(dt);
         updateWater(dt);
-        controls.update();
+        if (!walk.on && !renderer.xr.isPresenting) controls.update();
         renderer.render(scene, camera);
     });
 
@@ -1731,6 +2006,9 @@ async function loadPlan() {
     }
 }
 
+/* واجهة مشتركة لملء الشاشة — يستخدمها وضع التجوّل لفتح العرض وإغلاقه */
+const FULLVIEW = { isOpen: () => false, open() {}, close() {}, onClose: null };
+
 /* ── عرض المجسم بملء الشاشة كصفحة مستقلة على الجوال ────────────────
    يُفتح بزر التكبير، ويُغلق بالزر نفسه أو بزر الرجوع في المتصفح أو Esc. */
 (function fullscreenView() {
@@ -1742,7 +2020,9 @@ async function loadPlan() {
     const ICON_CLOSE = svgIcon('<path d="M18 6 6 18M6 6l12 12"/>');
 
     function setOpen(open) {
+        const was = section.classList.contains('is-full');
         section.classList.toggle('is-full', open);
+        if (was && !open && FULLVIEW.onClose) FULLVIEW.onClose();
         document.documentElement.classList.toggle('apt3d-lock', open);
         btn.classList.toggle('active', open);
         btn.innerHTML = open ? ICON_CLOSE : ICON_EXPAND;
@@ -1765,6 +2045,18 @@ async function loadPlan() {
     window.addEventListener('popstate', () => {
         if (section.classList.contains('is-full')) setOpen(false);
     });
+
+    FULLVIEW.isOpen = () => section.classList.contains('is-full');
+    FULLVIEW.open = () => {
+        if (FULLVIEW.isOpen()) return;
+        setOpen(true);
+        history.pushState({ apt3dFull: true }, '');
+    };
+    FULLVIEW.close = () => {
+        if (!FULLVIEW.isOpen()) return;
+        if (history.state && history.state.apt3dFull) history.back();
+        else setOpen(false);
+    };
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && section.classList.contains('is-full')) btn.click();
     });
