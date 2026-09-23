@@ -13,6 +13,14 @@
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
     <link rel="mask-icon" href="assets/favicon.svg" color="#f2622a">
 
+    <!-- تطبيق ويب مستقل للوحة التحكم: الإضافة للشاشة الرئيسية تفتح /admin مباشرة،
+         وهو شرط iPhone لاستقبال إشعارات الجوال (Web Push) -->
+    <link rel="manifest" href="manifest-admin.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="RentAPA لوحة">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -365,6 +373,20 @@
 
         <!-- ============ 6) الإشعارات ============ -->
         <section class="view" id="view-notifications">
+            <!-- إشعارات الجوال (Web Push): رسائل الضيوف وحجوزات/أعطال مزامنة المنصات -->
+            <div class="card" id="push-card">
+                <div class="card-head">
+                    <h2>📲 إشعارات الجوال</h2>
+                    <span class="tag" id="push-state"></span>
+                </div>
+                <p class="sub" id="push-help" style="font-size:12.5px;line-height:1.9;margin-bottom:12px"></p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="btn btn-primary btn-sm" id="btn-push-on" hidden>تفعيل على هذا الجهاز</button>
+                    <button class="btn btn-ghost btn-sm" id="btn-push-test" hidden>إرسال إشعار تجريبي</button>
+                    <button class="btn btn-ghost btn-sm" id="btn-push-off" hidden style="color:var(--danger)">إيقاف على هذا الجهاز</button>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-head">
                     <h2>الإشعارات</h2>

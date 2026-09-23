@@ -14,6 +14,10 @@
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://divoyxodxkioxugrphby.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_qw9IiQ52_WFip-4gNX4lkA_CZA0VFzf';
 
+// الإشعارات اختيارية: لو تعذّر تحميل مكتبتها تستمر المزامنة نفسها بلا توقف
+let sendToOwner = null;
+try { ({ sendToOwner } = require('./_push')); } catch (e) { console.error('[ical-sync] push unavailable', e.message); }
+
 const MAX_BYTES = 2 * 1024 * 1024;   // 2MB تكفي لأي تقويم حجوزات
 const FETCH_TIMEOUT = 8000;           // الروابط تُجلب بالتوازي، فتبقى المدة الكلية قصيرة
 
@@ -114,6 +118,59 @@ async function syncOne(key, feed) {
     }
 }
 
+/* ---- إشعار الجوال بعد المزامنة (الهجرة 0011) ----
+   حجز جديد/ملغى بتواريخه (بالمقارنة بين الأيام المحجوزة قبل المزامنة وبعدها)،
+   وتعطّل رابط منصة عند أول فشل فقط لا كل 15 دقيقة، ثم إشعار عند عودته. */
+const fmtDay = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('ar-u-nu-latn', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+const rangeKey = (b) => `${b.checkin}|${b.checkout}`;
+
+async function bookedRanges() {
+    const r = await rpc('public_booked_ranges', {});
+    return r.ok && Array.isArray(r.data) ? r.data : null;
+}
+
+async function feedStatus(key) {
+    const r = await rpc('ical_feed_status', { p_key: key });
+    if (!r.ok || !Array.isArray(r.data)) return null;   // الهجرة 0011 لم تُطبَّق — بلا إشعارات
+    return Object.fromEntries(r.data.map((f) => [f.id, f.last_error || null]));
+}
+
+async function notifyChanges(key, results, prevErrors, before, after) {
+    const lines = [];
+    let alert = false;
+
+    const added = results.filter((f) => f.ok && f.added);
+    const removed = results.filter((f) => f.ok && f.removed);
+    if (added.length || removed.length) {
+        const beforeSet = new Set((before || []).map(rangeKey));
+        const afterSet = new Set((after || []).map(rangeKey));
+        const newRanges = (after || []).filter((b) => !beforeSet.has(rangeKey(b)));
+        const goneRanges = (before || []).filter((b) => !afterSet.has(rangeKey(b)));
+        if (added.length) {
+            lines.push(`🏠 حجز جديد من ${added.map((f) => f.name).join(' و')}`);
+            newRanges.slice(0, 4).forEach((b) => lines.push(`• ${fmtDay(b.checkin)} ← ${fmtDay(b.checkout)}`));
+        }
+        if (removed.length) {
+            lines.push(`❌ إلغاء حجز في ${removed.map((f) => f.name).join(' و')}`);
+            goneRanges.slice(0, 4).forEach((b) => lines.push(`• ${fmtDay(b.checkin)} ← ${fmtDay(b.checkout)} (أصبحت متاحة)`));
+        }
+    }
+
+    results.forEach((f) => {
+        const had = prevErrors[f.id];
+        if (!f.ok && !had) { alert = true; lines.push(`⚠️ تعذّرت مزامنة ${f.name}: ${f.error}`); }
+        if (f.ok && had) lines.push(`✅ عادت مزامنة ${f.name} للعمل`);
+    });
+
+    if (!lines.length || !sendToOwner) return null;
+    return sendToOwner(key, {
+        title: alert ? '⚠️ مزامنة التقويم' : '📅 تحديث الحجوزات',
+        body: lines.join('\n'),
+        url: '/admin#calendar',
+        tag: alert ? 'ical-alert' : undefined,
+    });
+}
+
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -135,8 +192,19 @@ module.exports = async (req, res) => {
 
         const only = String((req.query && req.query.feed) || '').trim();
         const feeds = (Array.isArray(list.data) ? list.data : []).filter((f) => !only || f.id === only);
+        // الحالة قبل المزامنة لإشعار الجوال (تُتجاهل بصمت إن لم تُطبَّق الهجرة 0011)
+        const prevErrors = await feedStatus(key).catch(() => null);
+        const before = prevErrors ? await bookedRanges().catch(() => null) : null;
+
         const results = await Promise.all(feeds.map((f) => syncOne(key, f)));
-        return send(200, { ok: true, at: new Date().toISOString(), feeds: results });
+
+        let push = null;
+        if (prevErrors) {
+            const after = await bookedRanges().catch(() => null);
+            push = await notifyChanges(key, results, prevErrors, before, after)
+                .catch((e) => { console.error('[ical-sync] push failed', e.message); return { error: e.message }; });
+        }
+        return send(200, { ok: true, at: new Date().toISOString(), feeds: results, push });
     } catch (e) {
         console.error('[ical-sync] error', e);
         return send(500, { ok: false, error: 'sync failed' });

@@ -1,0 +1,25 @@
+{
+  "name": "RentAPA — لوحة التحكم",
+  "short_name": "RentAPA لوحة",
+  "description": "لوحة تحكم المالك: الحجوزات والرسائل والإشعارات",
+  "id": "/admin",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#f2622a",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "assets/favicon.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

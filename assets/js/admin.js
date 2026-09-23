@@ -1768,6 +1768,149 @@
         }));
     }
 
+    /* ---------------------------------------------------------------------
+       إشعارات الجوال (Web Push — الهجرة 0011)
+       الجهاز يشترك من هنا، والخادم (/api/push-notify) يرسل عند: رسالة ضيف جديدة
+       (مشغّل في القاعدة)، وحجز جديد/إلغاء أو تعطّل في مزامنة المنصات (/api/ical-sync).
+       على iPhone لا تعمل إلا من تطبيق اللوحة المضاف للشاشة الرئيسية (iOS 16.4+).
+       --------------------------------------------------------------------- */
+    const PUSH_SUPPORTED = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const isStandaloneApp = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    function b64UrlToUint8(b64) {
+        const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+        const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+        return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+    }
+
+    async function pushApi(body) {
+        const key = await loadSyncKey();
+        const r = await fetch('/api/push-notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Sync-Key': key },
+            body: JSON.stringify(body),
+        });
+        let j = {};
+        try { j = await r.json(); } catch (e) { /* رد غير JSON */ }
+        if (!r.ok || !j.ok) {
+            throw new Error(j.error === 'apply migration 0011' ? 'طبّق الهجرة 0011 في Supabase أولاً' : `الخادم رفض الطلب (${r.status})`);
+        }
+        return j;
+    }
+
+    async function currentPushSub() {
+        if (!PUSH_SUPPORTED) return null;
+        const reg = await navigator.serviceWorker.getRegistration('/');
+        return reg ? reg.pushManager.getSubscription() : null;
+    }
+
+    async function renderPushCard() {
+        const st = $('#push-state');
+        if (!st) return;
+        const help = $('#push-help');
+        const on = $('#btn-push-on'), test = $('#btn-push-test'), off = $('#btn-push-off');
+        on.hidden = test.hidden = off.hidden = true;
+
+        if (!PUSH_SUPPORTED) {
+            st.className = 'tag tag-warn';
+            st.textContent = 'غير متاحة هنا';
+            help.innerHTML = isIOSDevice && !isStandaloneApp()
+                ? 'على iPhone تصل الإشعارات فقط من <b>تطبيق اللوحة على الشاشة الرئيسية</b>: افتح <b dir="ltr">rentapa.vercel.app/admin</b> في Safari ← زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية»، ثم افتح اللوحة من الأيقونة الجديدة وفعّل الإشعارات من هنا.'
+                : 'هذا المتصفح لا يدعم إشعارات الويب.';
+            return;
+        }
+        if (Notification.permission === 'denied') {
+            st.className = 'tag tag-danger';
+            st.textContent = 'محظورة';
+            help.textContent = 'رُفضت الإشعارات سابقاً. فعّلها من إعدادات الجهاز ← الإشعارات ← RentAPA ثم ارجع هنا.';
+            return;
+        }
+
+        const sub = await currentPushSub().catch(() => null);
+        if (sub) {
+            st.className = 'tag tag-ok';
+            st.textContent = 'مفعّلة';
+            help.textContent = 'يصل لهذا الجهاز إشعار عند رسالة ضيف جديدة، وعند حجز جديد أو إلغاء من المنصات، وعند تعطّل المزامنة أو عودتها.';
+            test.hidden = off.hidden = false;
+        } else {
+            st.className = 'tag';
+            st.textContent = 'غير مفعّلة';
+            help.textContent = 'فعّلها ليصلك إشعار فوري عند رسالة ضيف، وعند حجز جديد أو إلغاء من جاذر إن وAirbnb، وعند تعطّل المزامنة.';
+            on.hidden = false;
+        }
+    }
+
+    async function enablePush() {
+        const btn = $('#btn-push-on');
+        btn.disabled = true;
+        try {
+            // طلب الإذن أولاً مباشرة بعد الضغط — شرط iPhone
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') throw new Error('لم يُسمح بالإشعارات على هذا الجهاز');
+
+            const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            await navigator.serviceWorker.ready;
+            const { publicKey } = await pushApi({ action: 'vapid' });
+
+            let sub = await reg.pushManager.getSubscription();
+            if (!sub) {
+                sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64UrlToUint8(publicKey) });
+            }
+            const j = sub.toJSON();
+            const { error } = await sbc().from('push_subscriptions').upsert({
+                endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth,
+                device: navigator.userAgent.slice(0, 160),
+            });
+            if (error) throw error;
+
+            toast('تم تفعيل الإشعارات على هذا الجهاز ✅');
+            pushApi({ title: '✅ الإشعارات مفعّلة', body: 'ستصلك هنا رسائل الضيوف وتنبيهات الحجوزات', url: '/admin#notifications', tag: 'push-test' })
+                .catch((e) => console.warn('[push] test failed', e));
+        } catch (e) {
+            console.error('[push] enable failed', e);
+            toast(e.message || 'تعذّر تفعيل الإشعارات', true);
+        } finally {
+            btn.disabled = false;
+            renderPushCard();
+        }
+    }
+
+    async function testPush() {
+        try {
+            const j = await pushApi({ title: '🔔 إشعار تجريبي', body: 'الإشعارات تعمل على أجهزتك', url: '/admin#notifications', tag: 'push-test' });
+            toast(j.sent ? `أُرسل إلى ${j.sent} ${j.sent === 1 ? 'جهاز' : 'أجهزة'}` : 'لا توجد أجهزة مسجلة — فعّل الإشعارات أولاً', !j.sent);
+        } catch (e) {
+            toast(e.message, true);
+        }
+    }
+
+    async function disablePush() {
+        try {
+            const sub = await currentPushSub();
+            if (sub) {
+                const endpoint = sub.endpoint;
+                await sub.unsubscribe();
+                const client = sbc();
+                if (client) await client.from('push_subscriptions').delete().eq('endpoint', endpoint);
+            }
+            toast('أُوقفت الإشعارات على هذا الجهاز');
+        } catch (e) {
+            console.error('[push] disable failed', e);
+            toast('تعذّر إيقاف الإشعارات', true);
+        } finally {
+            renderPushCard();
+        }
+    }
+
+    function bindPushCard() {
+        const on = $('#btn-push-on');
+        if (!on) return;
+        on.addEventListener('click', enablePush);
+        $('#btn-push-test').addEventListener('click', testPush);
+        $('#btn-push-off').addEventListener('click', disablePush);
+    }
+
     async function loadBookings() {
         const client = sbc();
         if (!client) return;
@@ -2805,6 +2948,7 @@
     }
 
     function renderNotifications() {
+        renderPushCard();
         const list = state.notifications.filter((n) => notifFilter === 'all' || n.type === notifFilter);
 
         if (!list.length) {
@@ -3837,6 +3981,7 @@
         applyTheme();
         applyLang();
         bind();
+        bindPushCard();    // أزرار إشعارات الجوال
         updateBadges();
         // اعرض الواجهة فوراً، ثم تُحدَّث تلقائياً حالما تصل البيانات من الخادم
         const hash = location.hash.replace('#', '');
