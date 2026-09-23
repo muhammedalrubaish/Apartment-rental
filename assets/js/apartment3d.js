@@ -50,7 +50,10 @@ const MAT = {
     fabricWarm: mat(0xe8e6df, { roughness: 0.9, map: tiled(makeFabricTexture(), 3, 3) }),   // وسائد فاتحة
     upholstery: mat(0xcfc6b8, { roughness: 0.95, map: tiled(makeFabricTexture(), 3, 3) }),  // تنجيد السرير
     duvet: mat(0xf7f5f1, { roughness: 0.92, map: tiled(makeFabricTexture(), 4, 4) }),
-    lacquer: mat(0xefe8de, { roughness: 0.35 }),                                           // دولاب لامع كريمي
+    lacquer: mat(0xefe8de, { roughness: 0.35 }),
+    curtain: new THREE.MeshStandardMaterial({                                                 // ستارة بيج كصورة غرفة النوم
+        color: 0xc9b9a3, roughness: 0.95, side: THREE.DoubleSide, map: tiled(makeFabricTexture(), 6, 2),
+    }),                                           // دولاب لامع كريمي
     throwAccent: mat(0xc9774f, { roughness: 0.95, map: tiled(makeFabricTexture(), 4, 4) }), // لمسة برتقالية
     white: mat(0xfafafa, { roughness: 0.4 }),
     ceramic: mat(0xffffff, { roughness: 0.12, metalness: 0.02 }),
@@ -518,6 +521,24 @@ function lilies(x, y, z, vaseMat = MAT.ceramic, oval = false) {
     return g;
 }
 
+/* ستارة بطيّات عمودية منتظمة: مستوى مقسّم تُزاح نقاطه بموجة جيبية فتظهر الطيّات
+   بالضوء والظل. الطول على المحور x المحلي والوجه نحو +z. */
+function curtain(length, height, foldEvery = 0.13, depth = 0.035) {
+    const seg = Math.max(32, Math.round((length / foldEvery) * 8));
+    const geo = new THREE.PlaneGeometry(length, height, seg, 1);
+    const pos = geo.attributes.position;
+    const folds = length / foldEvery;
+    for (let i = 0; i < pos.count; i++) {
+        const u = pos.getX(i) / length + 0.5;
+        pos.setZ(i, Math.sin(u * folds * Math.PI * 2) * depth);
+    }
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, MAT.curtain);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+}
+
 /* نبتة زينة في أصيص — تضيف حياة واقعية للمشهد */
 function plant(x, z, s = 1) {
     const g = new THREE.Group();
@@ -728,6 +749,17 @@ const FURNITURE = {
                 out.push(box(0.018, 0.34, 0.025, MAT.gold, wx - wl / 2 + off, 1.05, front - 0.015)));
             out.push(plant(R.x0 + 0.45, R.z0 + R.d - 0.45, 1.1));
         }
+
+        /* ستارة كاملة على الجدار يمين السرير (الشرقي) من الأرض حتى أعلى الجدار ولكامل طوله،
+           كما في صورة غرفة النوم، مع مجرى رفيع أعلاها */
+        const half = (R.T || 0.25) / 2;
+        const cFace = R.x0 + R.w - half - 0.07;
+        const cLen = R.d - half * 2 - 0.04;
+        const cH = Math.max(1.2, (R.outerH || 1.8) - 0.04);
+        const drape = curtain(cLen, cH);
+        drape.rotation.y = -Math.PI / 2;                 // الوجه نحو الغرب (داخل الغرفة) والطول على امتداد الجدار
+        drape.position.set(cFace, cH / 2 + 0.015, R.mz);
+        out.push(drape, box(0.04, 0.03, cLen, MAT.dark, cFace + 0.03, cH + 0.01, R.mz));
         return out;
     },
 
@@ -1176,6 +1208,7 @@ function buildApartment(scene, plan) {
             mx: cx(r.x + r.w / 2), mz: cz(r.z + r.d / 2),
             facing: r.facing || 'south',
             T,                                   // سماكة الجدار: وجه الجدار الداخلي = حافة الغرفة − T/2
+            outerH: wallH,                       // ارتفاع الجدار الخارجي المقطوع في المجسم
             sofaSide: r.sofaSide,
         };
         (FURNITURE[r.type] || (() => []))(R).forEach((m) => g.add(m));
