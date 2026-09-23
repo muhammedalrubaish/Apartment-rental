@@ -1055,15 +1055,20 @@
         /* شريط الحجز (بأسلوب Airbnb): عنصر واحد متصل لكل حجز في كل صف أسبوع،
            يُرسم فوق الشبكة بتموضع مطلق على مساحة الشبكة (grid-area) فيعبر
            الفجوات بين الخلايا بلا انقطاع.
-           - يبدأ من منتصف يوم الوصول وينتهي عند منتصف يوم المغادرة، فحجزان
-             متعاقبان يلتقيان في منتصف يوم التسليم.
+           - يغطي خلية يوم الوصول كاملة حتى نهاية خلية يوم المغادرة. وإذا التقى
+             حجزان في يوم تسليم واحد (مغادرة الأول = وصول الثاني) يتقاسمان تلك
+             الخلية: الأول حتى منتصفها والثاني من منتصفها.
            - الاسم يُكتب مرة واحدة عند بداية الحجز، ويُعاد فقط إذا بدأ شهر جديد
              والحجز مستمر من الشهر السابق. الامتداد بين الصفوف بلا اسم. */
         const firstIso = iso(new Date(y, m, 1));
         const lastIso = iso(new Date(y, m, daysInMonth));
         const bars = [];
-        state.bookings
-            .filter((b) => b.status !== 'cancelled' && b.checkin <= lastIso && b.checkout >= firstIso)
+        const active = state.bookings.filter((b) => b.status !== 'cancelled');
+        // يوم تسليم مشترك: حجز آخر يبدأ يوم مغادرة هذا الحجز، أو ينتهي يوم وصوله
+        const handoverAfter = (b) => active.some((o) => o.id !== b.id && o.checkin === b.checkout);
+        const handoverBefore = (b) => active.some((o) => o.id !== b.id && o.checkout === b.checkin);
+        active
+            .filter((b) => b.checkin <= lastIso && b.checkout >= firstIso)
             .forEach((b) => {
                 // صنف اللون بحسب المصدر (انظر .cal-bar.src-* في CSS) — الافتراضي برتقالي الموقع
                 const kind = b.status === 'blocked' || b.source === 'block' ? 'src-block' : `src-${b.source || 'direct'}`;
@@ -1082,11 +1087,15 @@
 
         html += bars.map((s) => {
             const span = s.endCol - s.startCol + 1;
-            const fromIn = s.startIso === s.b.checkin;      // يبدأ من منتصف يوم الوصول
-            const toOut = s.endIso === s.b.checkout;        // ينتهي عند منتصف يوم المغادرة
-            const stubOnly = fromIn === false && toOut && span === 1;   // نصف يوم مغادرة فقط
+            const fromIn = s.startIso === s.b.checkin;      // يبدأ من أول خلية يوم الوصول
+            const toOut = s.endIso === s.b.checkout;        // ينتهي عند آخر خلية يوم المغادرة
+            const halfStart = fromIn && handoverBefore(s.b);   // يتقاسم يوم الوصول مع حجز مغادر
+            const halfEnd = toOut && handoverAfter(s.b);       // يتقاسم يوم المغادرة مع حجز قادم
+            const stubOnly = !fromIn && toOut && span === 1 && halfEnd;   // نصف يوم مغادرة فقط
             const label = !stubOnly && (fromIn || s.startD === 1) ? escapeHtml(s.b.guest) : '';
-            const cls = ['cal-bar', s.kind, fromIn ? 'from-checkin' : '', toOut ? 'to-checkout' : ''].filter(Boolean);
+            const cls = ['cal-bar', s.kind,
+                fromIn ? 'from-checkin' : '', toOut ? 'to-checkout' : '',
+                halfStart ? 'half-start' : '', halfEnd ? 'half-end' : ''].filter(Boolean);
             // للعناصر المطلقة داخل الشبكة يجب تحديد خطّي البداية والنهاية صراحةً — span يُعامل كـ auto
             return `<span class="${cls.join(' ')}" style="grid-row:${s.row} / ${s.row + 1};grid-column:${s.startCol} / ${s.endCol + 1};--span:${span}" title="${escapeHtml(s.b.guest)}">${label}</span>`;
         }).join('');

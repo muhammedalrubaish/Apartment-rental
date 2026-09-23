@@ -507,10 +507,11 @@ td.dim { color: var(--text-dim); font-weight: 500; }
     text-overflow: ellipsis;
 }
 
-/* يبدأ من منتصف يوم الوصول وينتهي عند منتصف يوم المغادرة؛ ما عدا ذلك يصل
-   إلى حافة الصف بلا استدارة لأنه مستمر في الصف التالي أو السابق */
-.cal-bar.from-checkin { inset-inline-start: calc(var(--cell) / 2); }
-.cal-bar.to-checkout { inset-inline-end: calc(var(--cell) / 2); }
+/* الشريط يغطي خلية يوم الوصول كاملة حتى نهاية خلية يوم المغادرة. عند تقاسم
+   يوم تسليم مع حجز آخر (half-start / half-end) يقف عند منتصف تلك الخلية.
+   ما عدا ذلك يصل إلى حافة الصف بلا استدارة لأنه مستمر في الصف التالي أو السابق */
+.cal-bar.half-start { inset-inline-start: calc(var(--cell) / 2); }
+.cal-bar.half-end { inset-inline-end: calc(var(--cell) / 2); }
 .cal-bar:not(.from-checkin) { border-start-start-radius: 0; border-end-start-radius: 0; }
 .cal-bar:not(.to-checkout) { border-start-end-radius: 0; border-end-end-radius: 0; }
 
