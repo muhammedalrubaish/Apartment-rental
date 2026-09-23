@@ -1772,6 +1772,37 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
 
 .apt3d-canvas canvas { display: block; width: 100%; height: 100%; }
 
+/* ملء الشاشة: القسم يصبح صفحة كاملة فوق الموقع — الأزرار أعلى والمجسم يملأ الباقي */
+.apt3d-section.is-full {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: linear-gradient(180deg, #fbf3ec, #efe7df);
+    opacity: 1 !important;
+    transform: none !important;
+    overflow: hidden;
+}
+.apt3d-section.is-full > .card-title,
+.apt3d-section.is-full > .description-text,
+.apt3d-section.is-full > .apt3d-note { display: none; }
+.apt3d-section.is-full .apt3d-chips { margin: 0; justify-content: center; flex-shrink: 0; }
+.apt3d-section.is-full .apt3d-stage { flex: 1; min-height: 0; }
+.apt3d-section.is-full .apt3d-canvas { aspect-ratio: auto; height: 100%; min-height: 0; }
+html.apt3d-lock,
+html.apt3d-lock body { overflow: hidden; overscroll-behavior: none; }
+/* الأزرار العائمة والشريط العلوي تختفي في ملء الشاشة حتى لا تغطي المجسم */
+html.apt3d-lock .floating-wa,
+html.apt3d-lock .chat-launcher,
+html.apt3d-lock .chat-panel,
+html.apt3d-lock .navbar { display: none !important; }
+
 .apt3d-fallback {
     position: absolute;
     inset: 0;
