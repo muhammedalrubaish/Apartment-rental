@@ -38,7 +38,7 @@ function buildICS(rows) {
     const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const lines = [
         'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//RHSA7905//Property Manager//AR',
-        'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:حجوزات الشقة',
+        'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:RentAPA',
     ];
 
     rows.forEach((b) => {
