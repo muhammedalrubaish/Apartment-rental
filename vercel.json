@@ -11,5 +11,10 @@
       "src": "/(.*)",
       "dest": "/$1"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "claude/booking-window-redesign-gdizwf": false
+    }
+  }
 }
