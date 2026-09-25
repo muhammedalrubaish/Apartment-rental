@@ -575,6 +575,7 @@
     };
 
     function go(view) {
+        if (view === 'messages') setThreadOpen(false);   // زر الرسائل في الشريط يعود لقائمة المحادثات
         $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
         $$('.rail-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
         const meta = PAGE_META[view] || ['', ''];
@@ -1619,7 +1620,21 @@
     };
 
     // حالة الرسائل الحية — لا تُحفظ في localStorage، تُسحب من الخادم مباشرة
-    const msg = { conversations: [], byId: {}, activeId: null, channel: null, loaded: false };
+    const msg = { conversations: [], byId: {}, activeId: null, channel: null, loaded: false, threadOpen: false };
+
+    /* الجوال (عمود واحد ≤900px): صندوق وارد بأسلوب Airbnb — قائمة الأسماء أولاً، والضغط
+       على اسم يفتح المحادثة صفحةً داخلية بزر رجوع. الحاسوب: قائمة ومحادثة جنباً إلى جنب */
+    const inboxMode = () => window.matchMedia('(max-width: 900px)').matches;
+    const AV_COLORS = [['#fde7dc', '#c2410c'], ['#dcfce7', '#15803d'], ['#e0e7ff', '#4338ca'], ['#fce7f3', '#be185d'], ['#fef3c7', '#b45309'], ['#e0f2fe', '#0369a1']];
+    const avColor = (name) => AV_COLORS[[...String(name || '')].reduce((h, ch) => (h * 31 + ch.codePointAt(0)) >>> 0, 7) % AV_COLORS.length];
+
+    function setThreadOpen(open) {
+        msg.threadOpen = open;
+        const chat = document.querySelector('#view-messages .chat');
+        if (chat) chat.classList.toggle('is-thread', open);
+        const view = $('#view-messages');
+        if (view) view.classList.toggle('in-thread', open);
+    }
 
     function sbc() {
         return window.getSupabaseClient ? window.getSupabaseClient() : null;
@@ -2490,25 +2505,29 @@
         } else {
             list.innerHTML = msg.conversations.map((c) => {
                 const ch = CHANNEL_META[c.channel] || CHANNEL_META.site;
-                return `<button class="chat-item ${msg.activeId === c.id ? 'active' : ''}" data-thread="${c.id}">
-                    <span class="av">${escapeHtml(c.visitor_name.charAt(0))}</span>
+                const [bg, fg] = avColor(c.visitor_name);
+                const active = msg.activeId === c.id && !inboxMode();
+                return `<button class="chat-item ${active ? 'active' : ''} ${c.unread_owner ? 'unread' : ''}" data-thread="${c.id}">
+                    <span class="av" style="background:${bg};color:${fg}">${escapeHtml(c.visitor_name.charAt(0))}<span class="av-ch">${ch[0]}</span></span>
                     <span class="meta">
-                        <span class="nm">${escapeHtml(c.visitor_name)} <span style="font-size:11px">${ch[0]}</span></span>
+                        <span class="nm"><span class="nm-t">${escapeHtml(c.visitor_name)}</span><span class="tm">${c.last_at ? relTime(c.last_at) : ''}</span></span>
                         <span class="pv">${escapeHtml(c.last_message || 'لا رسائل بعد')}</span>
                     </span>
-                    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
-                        <span class="tm">${c.last_at ? relTime(c.last_at) : ''}</span>
-                        ${c.unread_owner ? '<span class="unread-dot"></span>' : ''}
-                    </span>
+                    ${c.unread_owner ? `<span class="unread-n">${c.unread_owner}</span>` : ''}
                 </button>`;
             }).join('');
 
             $$('[data-thread]', list).forEach((el) => {
-                el.addEventListener('click', () => openThread(el.dataset.thread));
+                el.addEventListener('click', () => {
+                    if (inboxMode()) { setThreadOpen(true); window.scrollTo(0, 0); }
+                    openThread(el.dataset.thread);
+                });
             });
 
-            if (!msg.activeId) openThread(msg.conversations[0].id, true);
-            else openThread(msg.activeId, true);
+            // الحاسوب: تُعرض أحدث محادثة تلقائياً. الجوال: القائمة وحدها حتى يُختار اسم
+            if (!inboxMode()) openThread(msg.activeId || msg.conversations[0].id, true);
+            else if (msg.threadOpen && msg.activeId) openThread(msg.activeId, true);
+            else setThreadOpen(false);
         }
 
         const badge = $('#badge-msg');
@@ -2519,7 +2538,8 @@
     }
 
     function threadVisible() {
-        return currentView() === 'messages' && document.visibilityState !== 'hidden';
+        return currentView() === 'messages' && document.visibilityState !== 'hidden'
+            && (!inboxMode() || msg.threadOpen);
     }
 
     async function openThread(id, keepList) {
@@ -2535,14 +2555,18 @@
         if (c.unread_owner && threadVisible()) markConversationRead(id).then(renderMessages);
 
         const ch = CHANNEL_META[c.channel] || CHANNEL_META.site;
+        const [avBg, avFg] = avColor(c.visitor_name);
         $('#chat-panel').innerHTML = `
             <div class="chat-top">
-                <span class="av" style="width:36px;height:36px;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;font-weight:800">${escapeHtml(c.visitor_name.charAt(0))}</span>
-                <div style="margin-inline-end:auto">
+                <button class="icon-btn chat-back" id="chat-back" aria-label="رجوع للرسائل" title="رجوع للرسائل">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+                <span class="av" style="width:36px;height:36px;border-radius:50%;background:${avBg};color:${avFg};display:grid;place-items:center;font-weight:800;flex-shrink:0">${escapeHtml(c.visitor_name.charAt(0))}</span>
+                <div class="chat-who">
                     <div style="font-size:14px;font-weight:800">${escapeHtml(c.visitor_name)}</div>
                     <div style="font-size:11.5px;color:var(--muted);font-weight:600" dir="ltr">${escapeHtml(c.visitor_phone || '')}</div>
                 </div>
-                <span class="tag ${ch[2]}">${ch[0]} ${ch[1]}</span>
+                <span class="tag chat-ch ${ch[2]}">${ch[0]} ${ch[1]}</span>
                 <a class="btn btn-ghost btn-sm" href="https://wa.me/${(c.visitor_phone || '').replace(/^0/, '966')}" target="_blank" rel="noopener">واتساب</a>
                 <button class="btn btn-ghost btn-sm" id="btn-thread-book">+ حجز</button>
             </div>
@@ -2553,6 +2577,12 @@
                 <input class="input" id="msg-input" placeholder="اكتب رداً…">
                 <button class="btn btn-primary" id="msg-send">إرسال</button>
             </div>`;
+
+        $('#chat-back').addEventListener('click', () => {
+            setThreadOpen(false);
+            renderMessages();
+            window.scrollTo(0, 0);
+        });
 
         $('#btn-thread-book').addEventListener('click', () => {
             openBookingForm({ guest: c.visitor_name, phone: c.visitor_phone, source: 'direct' });
