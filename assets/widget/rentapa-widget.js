@@ -226,7 +226,104 @@ function tile(parent, o) {
     img.imageSize = new Size(o.width - 18, 4);
     bs.addSpacer();
   }
+  if (o.foot) {
+    t.addSpacer(2);
+    const fs = t.addStack();
+    fs.addSpacer();
+    const ft = fs.addText(o.foot);
+    ft.font = Font.systemFont(7.5);
+    ft.textColor = SOFT;
+    ft.lineLimit = 1;
+    ft.minimumScaleFactor = 0.6;
+    fs.addSpacer();
+  }
   return t;
+}
+
+/* ---------- التصميم المختصر للأداة الكبيرة ---------- */
+
+// سطر بطرفين: النص والأيقونة يميناً، ونص صغير يساراً (حالة أو تاريخ)
+function splitRow(parent, text, side, o) {
+  const r = parent.addStack();
+  r.layoutHorizontally();
+  r.centerAlignContent();
+  const main = () => {
+    if (o.icon) {
+      const im = r.addImage(sym(o.icon));
+      im.imageSize = new Size(o.iconSize || 13, o.iconSize || 13);
+      im.tintColor = WHITE;
+      r.addSpacer(5);
+    }
+    const t = r.addText(text);
+    t.font = o.font || Font.boldSystemFont(15);
+    t.textColor = WHITE;
+    t.lineLimit = 1;
+    t.minimumScaleFactor = 0.6;
+  };
+  const aside = () => {
+    if (!side) return;
+    const t = r.addText(side);
+    t.font = Font.semiboldSystemFont(10);
+    t.textColor = SOFT;
+    t.lineLimit = 1;
+  };
+  // الجوال العربي يعكس الترتيب: الأول يظهر يميناً
+  if (RTL) { main(); r.addSpacer(); aside(); } else { aside(); r.addSpacer(); main(); }
+  return r;
+}
+
+// بطاقة رئيسية بثلاثة أسطر: الاسم والحالة، المنصة والتواريخ، الليالي
+function heroCard(parent, x, status, icon, show) {
+  const c = parent.addStack();
+  c.layoutVertically();
+  c.backgroundColor = new Color("#ffffff", 0.14);
+  c.cornerRadius = 14;
+  c.setPadding(8, 11, 8, 11);
+  splitRow(c, show ? nameOf(x, show) : status, show ? status : "", { icon, iconSize: 14 });
+  c.addSpacer(4);
+  row(c, guestAndPlatform(x, false).concat([x.inLabel + " ← " + x.outLabel]).join(" • "),
+    { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(12), color: SOFT });
+  const nights = x.when === "مقيم الآن" ? "باقي " + nightsLeftWord(x.nightsLeft) + " من " + x.nightsLabel : x.nightsLabel;
+  row(c, nights, { icon: "moon.fill", font: Font.systemFont(12), color: SOFT });
+  return c;
+}
+
+// مقارنة بالشهر السابق: سهم صعود/هبوط
+const trend = (a, b) => (a > b ? " ▲" : a < b ? " ▼" : "");
+
+// صف واحد من ثلاثة إطارات: الشهر الحالي كبيراً والسابق صغيراً تحته
+function compareTiles(parent, st, prev, width) {
+  if (!st) return;
+  const gap = 6;
+  const h = prev ? 54 : 44;
+  const tw = Math.floor((width - gap * 2) / 3);
+  const pm = prev ? prev.month + ": " : "";
+  const r = parent.addStack();
+  r.layoutHorizontally();
+  tile(r, { width: tw, height: h, icon: "calendar", label: "حجوزات " + st.month, value: String(st.bookings),
+    foot: prev ? pm + prev.bookings + trend(st.bookings, prev.bookings) : "" });
+  r.addSpacer(gap);
+  tile(r, { width: tw, height: h, icon: "moon.fill", label: "ليالٍ محجوزة", value: st.bookedNights + "/" + st.daysInMonth,
+    frac: st.daysInMonth ? st.bookedNights / st.daysInMonth : 0,
+    foot: prev ? pm + prev.bookedNights + "/" + prev.daysInMonth + trend(st.occupancy, prev.occupancy) : "" });
+  r.addSpacer(gap);
+  tile(r, { width: tw, height: h, icon: "calendar.badge.plus", label: "متاحة للشهر", value: String(st.freeLeft),
+    frac: st.daysLeft ? st.freeLeft / st.daysLeft : 0,
+    foot: prev ? pm + prev.freeLeft + " لم تُحجز" : "" });
+}
+
+// أسعار الليلة بإطارين نحيفين؛ المصدر في العنوان (مباشر/معتمد)
+function slimPrices(parent, pr, width) {
+  if (!pr) return;
+  const gap = 6;
+  const tw = Math.floor((width - gap) / 2);
+  const txt = (x) => (x.min === x.max ? String(x.min) : x.min + " – " + x.max) + " ر.س";
+  const src = (x) => (x.configured ? "معتمد" : "مباشر");
+  const r = parent.addStack();
+  r.layoutHorizontally();
+  tile(r, { width: tw, height: 36, icon: "sun.max.fill", label: "وسط الأسبوع • " + src(pr.weekday), value: txt(pr.weekday), valueSize: 13 });
+  r.addSpacer(gap);
+  tile(r, { width: tw, height: 36, icon: "sparkles", label: "الويكند • " + src(pr.weekend), value: txt(pr.weekend), valueSize: 13 });
 }
 
 // تذكير: حجوزات من المنصات تنقصها بيانات — الضغط يفتح لوحة التحكم لإكمالها
@@ -394,10 +491,9 @@ async function build(opts) {
       w.addSpacer();
       if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
       const cw = contentWidth();
-      if (d.prevStats) { statsTiles(w, d.prevStats, cw, true); w.addSpacer(5); }
-      statsTiles(w, d.stats, cw);
+      compareTiles(w, d.stats, d.prevStats, cw);
       w.addSpacer(6);
-      priceTiles(w, d.prices, cw);
+      slimPrices(w, d.prices, cw);
       return w;
     } else if (family === "medium") {
       w.addSpacer();
@@ -431,43 +527,33 @@ async function build(opts) {
     return w;
   }
 
-  // الكبيرة: حركة اليوم، بطاقة المقيم، بطاقة القادم، ثم بقية الحجوزات
+  // الكبيرة (مختصرة): بطاقة رئيسية بثلاثة أسطر، أسطر معلومات بلا عناوين، ثم المؤشرات والأسعار
   (d.departuresToday || []).forEach((x) => row(w, "مغادرة اليوم: " + (show ? x.first + " — " : "") + "جهّز الشقة للتنظيف",
     { icon: "arrow.up.right.circle.fill", font: Font.boldSystemFont(12), color: WHITE }));
   if ((d.departuresToday || []).length) w.addSpacer(5);
 
-  if (cur) { card(w, cur, "مقيم الآن", "house.fill", show, false); w.addSpacer(6); }
-  if (next) { card(w, next, "الحجز القادم • " + next.when, "calendar.badge.clock", show, !!cur); w.addSpacer(6); }
+  heroCard(w, main, cur ? "مقيم الآن" : next.when, cur ? "house.fill" : "calendar.badge.clock", show);
+  w.addSpacer(7);
 
-  const shown = [cur, next].filter(Boolean).map((x) => x.checkin + x.checkout);
-  const rest = (d.upcoming || []).filter((x) => shown.indexOf(x.checkin + x.checkout) === -1).slice(0, cur && next ? 1 : 2);
-  if (rest.length) {
-    row(w, "بعدها", { icon: "list.bullet", font: Font.boldSystemFont(12), color: SOFT });
-    w.addSpacer(2);
-    rest.forEach((x) => row(w, x.when + " • " + [nameOf(x, show), platformLine(x)].filter(Boolean).join(" • ") + " • " + x.range,
-      { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(11), color: SOFT }));
-    w.addSpacer(6);
+  // سطر واحد لكل معلومة: التالي، آخر مغادر، الإنترنت/الكهرباء، الحجوزات الناقصة
+  const second = cur ? next : (d.upcoming || []).find((x) => x.checkin > main.checkin);
+  if (second) {
+    row(w, "التالي " + second.when + ": " + guestAndPlatform(second, show).concat([second.inLabel]).join(" • "),
+      { icon: "calendar.badge.clock", font: Font.systemFont(11), color: SOFT });
   }
-
-  // المساحة المتبقية: السابقون أكثر حين يقلّ القادم
-  // المساحة محدودة: مع مؤشرات الشهر والأسعار أسفل الأداة يُكتفى بضيفين سابقين
-  const pastLimit = (cur && next) || (d.incomplete && d.incomplete.count) ? 1 : 2;
-  if ((d.past || []).length) {
-    row(w, "الحجوزات السابقة", { icon: "clock.arrow.circlepath", font: Font.boldSystemFont(12), color: SOFT });
-    w.addSpacer(2);
-    pastRows(w, d.past, show, pastLimit);
-    w.addSpacer(5);
+  const last = (d.past || [])[0];
+  if (last) {
+    row(w, "آخر مغادر: " + guestAndPlatform(last, show).concat([last.left]).join(" • "),
+      { icon: "clock.arrow.circlepath", font: Font.systemFont(11), color: SOFT });
   }
-
-  if ((d.bills || []).length) billRows(w, d.bills, false);
+  billRows(w, d.bills, true);
+  incompleteRow(w, d.incomplete);
 
   w.addSpacer();
-  if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
   const cw = contentWidth();
-  if (d.prevStats) { statsTiles(w, d.prevStats, cw, true); w.addSpacer(4); }
-  statsTiles(w, d.stats, cw);
-  w.addSpacer(4);
-  priceTiles(w, d.prices, cw);
+  compareTiles(w, d.stats, d.prevStats, cw);
+  w.addSpacer(6);
+  slimPrices(w, d.prices, cw);
   return w;
 }
 
