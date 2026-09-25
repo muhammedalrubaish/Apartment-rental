@@ -930,14 +930,14 @@ textarea.input.compact { min-height: 0; height: 50px; }
         position: fixed;
         top: auto;              /* تصفير top الموروث من sticky */
         /* ملتصق بأسفل الشاشة بزوايا علوية ناعمة مائلة للمربع. الحشوة السفلية أقل من
-           منطقة الأمان بـ 14px: الأيقونات أقرب لمؤشر الشاشة الرئيسية والشريط البرتقالي
-           تحتها أنحف ما يمكن دون أن تقع الأزرار تحت المؤشر */
+           منطقة الأمان بـ 22px: الأيقونات منخفضة قريبة من مؤشر الشاشة الرئيسية والشريط
+           البرتقالي تحتها رفيع، مع بقاء الأزرار فوق المؤشر */
         bottom: 0;
         inset-inline: 0;
         margin: 0;
         border-radius: 14px 14px 0 0;
         flex-direction: row;
-        padding: 6px 8px calc(4px + max(0px, env(safe-area-inset-bottom, 0px) - 14px));
+        padding: 7px 8px calc(4px + max(0px, env(safe-area-inset-bottom, 0px) - 22px));
         z-index: 1200;
         overflow-x: auto;
         overscroll-behavior: contain;   /* لا يجرّ الصفحة عند التمرير داخل الشريط */
@@ -961,7 +961,7 @@ textarea.input.compact { min-height: 0; height: 50px; }
 
     .app { padding: 0; gap: 0; }
     /* مساحة سفلية = ارتفاع الشريط العائم (~46) + بُعده عن الحافة + هامش */
-    .main { padding: 0 8px calc(62px + max(0px, env(safe-area-inset-bottom, 0px) - 14px)); }
+    .main { padding: 0 8px calc(62px + max(0px, env(safe-area-inset-bottom, 0px) - 22px)); }
     /* الترويسة ملتصقة بأعلى الشاشة وتمتد خلف شريط الحالة (منطقة الأمان العلوية)
        فلا يبقى فراغ أبيض فوقها في تطبيق الشاشة الرئيسية */
     .topbar {
@@ -988,7 +988,7 @@ textarea.input.compact { min-height: 0; height: 50px; }
     .field label { font-size: 11.5px; }
     .cal-grid { --cal-gap: 4px; --cal-pad: 4px; }
     .cal-day { height: 54px; }
-    .toast-zone { inset-inline: 12px; bottom: calc(60px + max(0px, env(safe-area-inset-bottom, 0px) - 14px)); z-index: 1300; }
+    .toast-zone { inset-inline: 12px; bottom: calc(60px + max(0px, env(safe-area-inset-bottom, 0px) - 22px)); z-index: 1300; }
 }
 
 /* شاشات اللمس: خط الحقول 16px يمنع iOS من تكبير الصفحة عند الضغط على حقل الكتابة */
