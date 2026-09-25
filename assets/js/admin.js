@@ -2153,6 +2153,7 @@
         $('#btn-push-off').addEventListener('click', disablePush);
     }
 
+    let bookingsLoaded = false;   // لا يُربط رقم قبل وصول الحجوزات الحقيقية من القاعدة
     async function loadBookings() {
         const client = sbc();
         if (!client) return;
@@ -2171,9 +2172,11 @@
         }
 
         state.bookings = (data || []).map(bookingFromRow);
+        bookingsLoaded = true;
         save();
         renderView(currentView());
         updateBadges();
+        autoLinkPhones();
     }
 
     async function createBooking(booking) {
@@ -2276,6 +2279,7 @@
 
         // المحادثات قد تكون وصلت قبل جهات الاتصال — أعد المزامنة بعد التحميل
         if (msg.loaded) syncContactsFromConversations();
+        autoLinkPhones();
     }
 
     async function createContact(contact) {
@@ -2430,6 +2434,7 @@
         msg.loaded = true;
         syncContactsFromConversations();
         renderMessages();
+        autoLinkPhones();
     }
 
     /* جهة اتصال حذفها المالك لا تُعاد تلقائياً من محادثات الموقع */
@@ -2989,6 +2994,69 @@
     /* توحيد الاسم للمقارنة: تشذيب المسافات وتوحيد المسافات المتكررة */
     function normName(name) {
         return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+
+    /* ---------------------------------------------------------------------
+       ربط رقم الجوال بالحجز تلقائياً: حجز بلا رقم (غالباً من جاذر إن/Airbnb بعد
+       إكمال اسمه) يأخذ رقم الضيف إن وُجد الاسم نفسه في جهات الاتصال (سجّله المالك)
+       أو في محادثات الموقع (سجّل الضيف نفسه). الشروط احتياطاً من الخلط:
+       اسم من كلمتين فأكثر، ليس اسماً عاماً («ضيف Airbnb»)، ورقم واحد فقط يطابقه.
+       لا يُستبدل رقم موجود أبداً.
+       --------------------------------------------------------------------- */
+    // توحيد الحروف المتشابهة في الأسماء العربية: أ/إ/آ←ا، ة←ه، ى←ي، وحذف التشكيل
+    function nameKey(name) {
+        return normName(name)
+            .replace(/[\u064B-\u0652\u0640]/g, '')
+            .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+    }
+
+    let linkingPhones = false;
+    let linkAgain = false;   // طُلب فحص أثناء فحص جارٍ (وصلت محادثات أو جهات اتصال) — يُعاد بعده
+    const linkTried = new Set();   // (حجز|اسم) فُحص في هذه الجلسة
+    async function autoLinkPhones() {
+        if (!bookingsLoaded) return;
+        if (linkingPhones) { linkAgain = true; return; }
+        linkingPhones = true;
+        linkAgain = false;
+        try {
+            // الاسم ← مجموعة الأرقام (بعد التوحيد) من جهات الاتصال والمحادثات
+            const byName = new Map();
+            const add = (name, phone) => {
+                const k = nameKey(name), n = normPhone(phone);
+                if (!n || k.split(' ').length < 2 || isPlaceholderGuest(name)) return;
+                if (!byName.has(k)) byName.set(k, new Map());
+                if (!byName.get(k).has(n)) byName.get(k).set(n, String(phone).trim());
+            };
+            state.contacts.forEach((c) => add(c.name, c.phone));
+            msg.conversations.forEach((c) => add(c.visitor_name, c.visitor_phone));
+
+            const linked = [];
+            for (const b of state.bookings) {
+                // المفتاح يشمل الاسم: حجز «ضيف Airbnb» يُفحص من جديد بعد إكمال اسمه
+                const tk = b.id + '|' + nameKey(b.guest);
+                if (b.phone || linkTried.has(tk) || b.status === 'cancelled' || b.status === 'blocked') continue;
+                const phones = byName.get(nameKey(b.guest));
+                // بلا مطابقة: يُعاد الفحص لاحقاً (جهات الاتصال والمحادثات قد تصل بعد الحجوزات)
+                if (!phones) continue;
+                linkTried.add(tk);
+                if (phones.size !== 1) continue;   // أكثر من رقم للاسم نفسه — لا تخمين
+                const phone = [...phones.values()][0];
+                const saved = await updateBooking(b.id, Object.assign({}, b, { phone }));
+                if (saved) { Object.assign(b, saved); linked.push(b.guest); }
+            }
+            if (linked.length) {
+                save();
+                renderView(currentView());
+                toast(linked.length === 1
+                    ? `رُبط رقم ${linked[0]} بحجزه تلقائياً`
+                    : `رُبطت أرقام ${linked.length} ضيوف بحجوزاتهم تلقائياً`);
+            }
+        } catch (e) {
+            console.warn('[auto-link phones]', e);
+        } finally {
+            linkingPhones = false;
+            if (linkAgain) autoLinkPhones();
+        }
     }
 
     /* حجوزات جهة الاتصال. تُطابَق بطريقتين:
@@ -3623,6 +3691,7 @@
                 toast('تم حفظ تعديل الحجز');
                 renderView(currentView());
                 updateBadges();
+                if (!booking.phone) autoLinkPhones();   // اسم أُكمل للتو قد يطابق جهة اتصال
                 return;
             }
 
