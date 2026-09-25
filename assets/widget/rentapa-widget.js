@@ -326,6 +326,65 @@ function slimPrices(parent, pr, width) {
   tile(r, { width: tw, height: 36, icon: "sparkles", label: "الويكند • " + src(pr.weekend), value: txt(pr.weekend), valueSize: 13 });
 }
 
+/* مناسبات الرياض القادمة (يوم التأسيس، الأعياد، كأس آسيا، موسم الرياض…) بطاقات
+   صغيرة متجاورة كتقويم مصغّر: الاسم، التاريخ، ثم العدّ التنازلي وتوفر الشقة فيها.
+   تُحسب في الخادم (api/_events.js) — الأداة تعرض فقط. */
+function eventCard(parent, e, width) {
+  const c = parent.addStack();
+  c.layoutVertically();
+  c.backgroundColor = new Color("#ffffff", e.ongoing ? 0.2 : 0.11);
+  c.cornerRadius = 11;
+  c.setPadding(5, 6, 5, 6);
+  c.size = new Size(width, 54);
+  const line = (text, font, color, icon) => {
+    const r = c.addStack();
+    r.layoutHorizontally();
+    r.centerAlignContent();
+    r.addSpacer();
+    const addIcon = () => {
+      if (!icon) return;
+      const im = r.addImage(sym(icon));
+      im.imageSize = new Size(9, 9);
+      im.tintColor = WHITE;
+      r.addSpacer(3);
+    };
+    if (RTL) addIcon();
+    const t = r.addText(text);
+    t.font = font;
+    t.textColor = color;
+    t.lineLimit = 1;
+    t.minimumScaleFactor = 0.55;
+    if (!RTL && icon) { r.addSpacer(3); const im = r.addImage(sym(icon)); im.imageSize = new Size(9, 9); im.tintColor = WHITE; }
+    r.addSpacer();
+  };
+  line(e.name, Font.boldSystemFont(10), WHITE, e.icon);
+  c.addSpacer(2);
+  line(e.label, Font.systemFont(9), SOFT);
+  c.addSpacer(2);
+  line([e.when, e.avail].filter(Boolean).join(" • "), Font.boldSystemFont(8.5), e.avail === "محجوزة ✓" ? WHITE : SOFT);
+}
+
+function eventsStrip(parent, events, width) {
+  const list = (events || []).slice(0, 3);
+  if (!list.length) return false;
+  const gap = 6;
+  const cw = Math.floor((width - gap * (list.length - 1)) / list.length);
+  const r = parent.addStack();
+  r.layoutHorizontally();
+  // الأقرب يظهر يميناً على جوال عربي
+  const ordered = RTL ? list : list.slice().reverse();
+  ordered.forEach((e, i) => { if (i) r.addSpacer(gap); eventCard(r, e, cw); });
+  return true;
+}
+
+// عند ضيق المساحة: سطر واحد لأقرب مناسبة
+function eventLine(parent, events) {
+  const e = (events || [])[0];
+  if (!e) return false;
+  row(parent, e.name + " • " + e.when + (e.avail ? " • " + e.avail : ""), { icon: e.icon || "calendar", font: Font.systemFont(11), color: SOFT });
+  return true;
+}
+
 /* زرّا «حجز سريع» و«إكمال» (حجوزات المنصات الناقصة) أسفل المعلومات.
    مع مفتاح الكتابة (سكربت منسوخ بعد الهجرة 0015): الضغط يشغّل السكربت داخل
    Scriptable فتظهر نماذج أصلية سريعة (handle أدناه) دون تسجيل دخول.
@@ -531,12 +590,14 @@ async function build(opts) {
       w.addSpacer(8);
       if ((d.past || []).length) {
         row(w, "الحجوزات السابقة", { icon: "clock.arrow.circlepath", font: Font.boldSystemFont(12), color: SOFT });
-        pastRows(w, d.past, show, 3);
+        pastRows(w, d.past, show, (d.events || []).length ? 2 : 3);   // سطر للمناسبات
         w.addSpacer(6);
       }
       billRows(w, d.bills, false);
-      w.addSpacer();
       const cw = contentWidth();
+      w.addSpacer(8);
+      eventsStrip(w, d.events, cw);
+      w.addSpacer();
       actionPills(w, d.incomplete, opts, cw);
       w.addSpacer(6);
       compareTiles(w, d.stats, d.prevStats, cw);
@@ -596,8 +657,13 @@ async function build(opts) {
   }
   billRows(w, d.bills, true);
 
-  w.addSpacer();
+  // المناسبات في الفراغ: بطاقات إن اتسع المكان، وإلا سطر واحد
+  const infoLines = (d.departuresToday || []).length + (second ? 1 : 0) + (last ? 1 : 0) + (d.bills || []).length;
   const cw = contentWidth();
+  if (infoLines <= 3) { w.addSpacer(8); eventsStrip(w, d.events, cw); }
+  else if (infoLines <= 4) eventLine(w, d.events);
+
+  w.addSpacer();
   actionPills(w, d.incomplete, opts, cw);
   w.addSpacer(6);
   compareTiles(w, d.stats, d.prevStats, cw);

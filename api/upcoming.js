@@ -10,6 +10,7 @@
 //
 // التواريخ بتوقيت الرياض (UTC+3 بلا توقيت صيفي).
 
+const { upcomingEvents } = require('./_events');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://divoyxodxkioxugrphby.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_qw9IiQ52_WFip-4gNX4lkA_CZA0VFzf';
 
@@ -322,6 +323,8 @@ module.exports = async (req, res) => {
         summary.bills = bills;
         summary.prices = priced.ranges;
         summary.incomplete = incompleteSummary(Array.isArray(rows) ? rows : [], priced.paid);
+        // مناسبات الرياض القادمة مع توفر الشقة فيها — خطأ فيها لا يُسقط الأداة
+        try { summary.events = upcomingEvents(riyadhToday(), Array.isArray(rows) ? rows : [], 3); } catch (e) { summary.events = []; }
 
         if (q.digest) {
             const key = String(req.headers['x-sync-key'] || '').trim();
