@@ -8,6 +8,7 @@
    mdlbeast.com، onegiantleap.com، esportsworldcup.com، مواقع تذاكر كأس السعودية. */
 
 const DAY = 24 * 60 * 60 * 1000;
+const MAJOR_LEAD_DAYS = 90;
 const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
 const diffDays = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / DAY);
 const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -24,16 +25,17 @@ const HIJRI = [
 ];
 
 const EVENTS = [
-    { name: 'موسم الرياض', icon: 'sparkles', start: '2026-10-15', end: '2027-03-31', approx: true },
+    // major: مناسبة كبرى — تظهر قبل موعدها بـ 90 يوماً ولو سبقتها مناسبات أصغر أقرب
+    { name: 'موسم الرياض', icon: 'sparkles', start: '2026-10-15', end: '2027-03-31', approx: true, major: true },
     { name: 'مؤتمر FII للاستثمار', icon: 'briefcase.fill', start: '2026-10-26', end: '2026-10-29' },
     { name: 'سيتي سكيب العالمي', icon: 'building.2.fill', start: '2026-11-16', end: '2026-11-19' },
     { name: 'ساوندستورم', icon: 'music.note', start: '2026-12-03', end: '2026-12-04' },
     { name: 'معرض الرياض للكتاب', icon: 'book.fill', start: '2026-12-10', end: '2026-12-19' },
     { name: 'الألعاب الآسيوية للصالات', icon: 'medal.fill', start: '2026-12-11', end: '2026-12-21' },
-    { name: 'كأس آسيا 2027', icon: 'soccerball', start: '2027-01-07', end: '2027-02-05' },
+    { name: 'كأس آسيا 2027', icon: 'soccerball', start: '2027-01-07', end: '2027-02-05', major: true },
     { name: 'كأس السعودية للخيل', icon: 'trophy.fill', start: '2027-02-05', end: '2027-02-06' },
     { name: 'مؤتمر LEAP', icon: 'cpu', start: '2027-04-12', end: '2027-04-15' },
-    { name: 'كأس الرياضات الإلكترونية', icon: 'gamecontroller.fill', start: '2027-07-16', end: '2027-08-01' },
+    { name: 'كأس الرياضات الإلكترونية', icon: 'gamecontroller.fill', start: '2027-07-16', end: '2027-08-01', major: true },
 ];
 
 let hijriFmt = null;
@@ -79,10 +81,11 @@ function allEvents(today, horizon) {
 }
 
 // ليالي المناسبة المتاحة: كل يوم فيها = ليلة (يوم ← اليوم التالي) غير محجوزة
-function freeNights(ev, rows) {
+// from: أول ليلة تُحسب — أثناء المناسبة الجارية تُحسب الليالي الباقية فقط
+function freeNights(ev, rows, from) {
     const taken = (rows || []).filter((b) => b && b.status !== 'cancelled' && b.checkin && b.checkout);
     let total = 0, free = 0;
-    for (let d = ev.start; d <= ev.end; d = addDays(d, 1)) {
+    for (let d = from && from > ev.start ? from : ev.start; d <= ev.end; d = addDays(d, 1)) {
         total += 1;
         const next = addDays(d, 1);
         if (!taken.some((b) => String(b.checkin).slice(0, 10) < next && String(b.checkout).slice(0, 10) > d)) free += 1;
@@ -97,9 +100,14 @@ const daysWord = (n) => (n === 1 ? 'يوم' : n === 2 ? 'يومين' : n <= 10 ?
 function upcomingEvents(today, rows, limit, horizon) {
     // الموسم الطويل الجاري (أكثر من شهر) يتأخر عن المناسبات القصيرة القادمة كي لا يحجز مكاناً لأشهر
     const longNow = (e) => (e.start <= today && diffDays(e.start, e.end) > 30 ? 1 : 0);
-    return allEvents(today, horizon || 240)
-        .sort((a, b) => longNow(a) - longNow(b) || a.start.localeCompare(b.start))
-        .slice(0, limit || 3)
+    const order = (a, b) => longNow(a) - longNow(b) || a.start.localeCompare(b.start);
+    const n = limit || 3;
+    const all = allEvents(today, horizon || 240).sort(order);
+    // المناسبات الكبرى القادمة خلال 90 يوماً تُحجز لها أماكن أولاً — التسعير يُقرَّر قبلها بأشهر
+    const soonMajor = all.filter((e) => e.major && e.start > today && diffDays(today, e.start) <= MAJOR_LEAD_DAYS).slice(0, n);
+    const rest = all.filter((e) => soonMajor.indexOf(e) === -1).slice(0, n - soonMajor.length);
+    return soonMajor.concat(rest)
+        .sort(order)   // العرض بترتيب زمني: الأقرب يميناً
         .map((e) => {
             const inDays = diffDays(today, e.start);
             const ongoing = inDays <= 0;
@@ -108,14 +116,15 @@ function upcomingEvents(today, rows, limit, horizon) {
                 : ongoing ? `جارٍ حتى ${rangeLabel(e.end, e.end)}`
                 : inDays === 1 ? 'غداً' : `بعد ${daysWord(inDays)}`;
             let avail = '';
-            if (len <= 14 && e.approx !== true) {
-                const n = freeNights(e, rows);
+            // التوفر للمناسبات القصيرة، وللكبرى مهما طالت (هي ما يُسعَّر له)
+            if ((len <= 14 || e.major) && e.approx !== true) {
+                const n = freeNights(e, rows, today);
                 avail = n.free === 0 ? 'محجوزة ✓' : n.free === n.total ? 'متاحة' : `متاح ${n.free}/${n.total}`;
             }
             return {
                 name: e.name, icon: e.icon, start: e.start, end: e.end,
                 label: e.approx === true ? MONTHS[Number(e.start.slice(5, 7)) - 1] + ' (لم يُعلن)' : rangeLabel(e.start, e.end),
-                inDays, ongoing, approx: !!e.approx, when, avail,
+                inDays, ongoing, approx: !!e.approx, major: !!e.major, when, avail,
             };
         });
 }

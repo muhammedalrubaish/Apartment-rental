@@ -332,7 +332,8 @@ function slimPrices(parent, pr, width) {
 function eventCard(parent, e, width) {
   const c = parent.addStack();
   c.layoutVertically();
-  c.backgroundColor = new Color("#ffffff", e.ongoing ? 0.2 : 0.11);
+  // الجارية والكبرى (كأس آسيا، موسم الرياض…) أوضح من غيرها
+  c.backgroundColor = new Color("#ffffff", e.ongoing || e.major ? 0.2 : 0.11);
   c.cornerRadius = 11;
   c.setPadding(5, 6, 5, 6);
   c.size = new Size(0, 54);   // العرض مرن كي يملأ الشريط عرض الأداة
