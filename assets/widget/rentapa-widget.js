@@ -18,6 +18,13 @@ const PLATFORM_ICON = {
   ical: "calendar",
 };
 
+/* iPhone بلغة عربية يعكس ترتيب عناصر السطر تلقائياً (أول عنصر يظهر يميناً).
+   لذلك يُبنى السطر بترتيب مختلف حسب لغة الجهاز، فتكون النتيجة دائماً:
+   النص محاذى لليمين والأيقونة على يمينه. */
+const RTL = (() => {
+  try { return /^(ar|he|fa|ur)/i.test(Device.language() || ""); } catch (e) { return false; }
+})();
+
 const WHITE = Color.white();
 const SOFT = new Color("#ffffff", 0.82);
 
@@ -47,24 +54,39 @@ function sym(name) {
   return s.image;
 }
 
-// سطر عربي من اليمين: [فراغ] النص  الأيقونة
+// سطر عربي: النص محاذى لليمين والأيقونة على يمينه
 function row(parent, text, opts) {
   const o = opts || {};
   const r = parent.addStack();
   r.layoutHorizontally();
   r.centerAlignContent();
-  r.addSpacer();
-  const t = r.addText(text);
-  t.font = o.font || Font.systemFont(12);
-  t.lineLimit = 1;
-  t.minimumScaleFactor = 0.55;
-  if (o.color) t.textColor = o.color;
-  if (o.icon) {
-    r.addSpacer(o.gap || 5);
+
+  const addIcon = () => {
+    if (!o.icon) return;
     const im = r.addImage(sym(o.icon));
     const size = o.iconSize || 12;
     im.imageSize = new Size(size, size);
     if (o.color) im.tintColor = o.color;
+  };
+  const addLabel = () => {
+    const t = r.addText(text);
+    t.font = o.font || Font.systemFont(12);
+    t.lineLimit = 1;
+    t.minimumScaleFactor = 0.55;
+    if (o.color) t.textColor = o.color;
+  };
+
+  if (RTL) {
+    // يُعكس عند العرض: الأيقونة يميناً ثم النص ثم الفراغ يساراً
+    addIcon();
+    if (o.icon) r.addSpacer(o.gap || 5);
+    addLabel();
+    r.addSpacer();
+  } else {
+    r.addSpacer();
+    addLabel();
+    if (o.icon) r.addSpacer(o.gap || 5);
+    addIcon();
   }
   return r;
 }

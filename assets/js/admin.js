@@ -1952,7 +1952,9 @@
         const st = $('#widget-state');
         if (!st) return;
         const btn = $('#btn-widget-copy');
-        if (widgetScript) { st.className = 'tag tag-ok'; st.textContent = 'جاهز'; btn.disabled = false; return; }
+        // يُجلب القالب من جديد في كل عرض: نسخة محفوظة في الذاكرة قد تكون أقدم من المنشور
+        widgetScript = '';
+        btn.disabled = true;
         st.className = 'tag';
         st.textContent = 'جارٍ التجهيز…';
         try {
