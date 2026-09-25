@@ -3315,10 +3315,35 @@
             <div class="modal-body">${bodyHtml}</div>
             <div class="modal-foot">${footHtml || ''}</div>`;
         $('#modal-back').classList.add('open');
+        $('#modal .modal-body').scrollTop = 0;
+        lockPageScroll(true);
         $('#modal-x').addEventListener('click', closeModal);
     }
 
-    function closeModal() { $('#modal-back').classList.remove('open'); }
+    function closeModal() {
+        $('#modal-back').classList.remove('open');
+        lockPageScroll(false);
+    }
+
+    /* تثبيت الصفحة خلف النافذة: overflow:hidden وحده لا يكفي في Safari على الآيفون،
+       فتُثبَّت الصفحة بموضعها الحالي (position:fixed) ثم تعود إليه عند الإغلاق */
+    let lockedScrollY = null;
+    function lockPageScroll(on) {
+        const body = document.body;
+        if (on && lockedScrollY === null) {
+            lockedScrollY = window.scrollY || 0;
+            document.documentElement.classList.add('modal-lock');
+            body.classList.add('modal-lock-fixed');
+            body.style.top = `-${lockedScrollY}px`;
+        } else if (!on && lockedScrollY !== null) {
+            const y = lockedScrollY;
+            lockedScrollY = null;
+            document.documentElement.classList.remove('modal-lock');
+            body.classList.remove('modal-lock-fixed');
+            body.style.top = '';
+            window.scrollTo(0, y);
+        }
+    }
 
     /* نموذج الحجز — إنشاء (pre = قيم مبدئية) أو تعديل (existing = الحجز القائم) */
     function openBookingForm(pre, existing) {

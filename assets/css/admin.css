@@ -703,10 +703,18 @@ select.input { cursor: pointer; }
     justify-content: center;
     padding: 20px;
     z-index: 90;
+    /* لا يمتد التمرير من النافذة إلى الصفحة خلفها */
+    overscroll-behavior: contain;
 }
 
 .modal-back.open { display: flex; }
 
+/* الصفحة خلف النافذة مثبّتة ما دامت مفتوحة (انظر lockPageScroll في admin.js):
+   Safari على الآيفون كان يمرّر الخلفية بدل محتوى النافذة */
+html.modal-lock, html.modal-lock body { overflow: hidden; overscroll-behavior: none; }
+body.modal-lock-fixed { position: fixed; inset-inline: 0; width: 100%; }
+
+/* الرأس والأزرار ثابتة، والمحتوى وحده يُمرَّر داخل النافذة */
 .modal {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -714,17 +722,26 @@ select.input { cursor: pointer; }
     width: 100%;
     max-width: 520px;
     max-height: 88vh;
-    overflow-y: auto;
+    max-height: 88dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     box-shadow: var(--shadow-lg);
     animation: pop 0.22s ease;
 }
 
 @keyframes pop { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
 
-.modal-head { padding: 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+.modal-head { padding: 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; flex: none; }
 .modal-head h3 { font-size: 16px; font-weight: 800; margin-inline-end: auto; }
-.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.modal-foot { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+.modal-body {
+    padding: 18px; display: flex; flex-direction: column; gap: 14px;
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
+.modal-body > * { flex-shrink: 0; }
+.modal-foot { padding: 14px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; flex: none; }
+.modal-foot:empty { display: none; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 /* صف يبقى بعمودين حتى على الجوال — لتقليل عدد الأسطر في النماذج القصيرة */
 .form-row.two { grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -833,8 +850,9 @@ textarea.input.compact { min-height: 0; height: 50px; }
     .card { --card-pad: 12px; }
     .form-row { grid-template-columns: 1fr; }
     /* نافذة أصغر وأكثر تكثيفاً على الجوال */
-    .modal-back { padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px)); }
-    .modal { border-radius: 16px; max-height: 84vh; }
+    /* فوق الشريط السفلي العائم (1200) وتحت التنبيهات (1300): أزرار الحفظ لا يغطيها الشريط */
+    .modal-back { padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 1250; }
+    .modal { border-radius: 16px; max-height: 100%; }
     .modal-head { padding: 12px 14px; }
     .modal-head h3 { font-size: 15px; }
     .modal-body { padding: 14px; gap: 10px; }
