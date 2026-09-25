@@ -21,8 +21,14 @@ const PLATFORM_ICON = {
 /* iPhone بلغة عربية يعكس ترتيب عناصر السطر تلقائياً (أول عنصر يظهر يميناً).
    لذلك يُبنى السطر بترتيب مختلف حسب لغة الجهاز، فتكون النتيجة دائماً:
    النص محاذى لليمين والأيقونة على يمينه. */
+/* لغة Scriptable نفسها إنجليزية حتى على جوال عربي، فـ Device.language() لا تكفي؛
+   المعتمد أول لغة مفضّلة للجهاز (ar-SA على جوال عربي) ثم منطقة الجهاز */
 const RTL = (() => {
-  try { return /^(ar|he|fa|ur)/i.test(Device.language() || ""); } catch (e) { return false; }
+  try {
+    const prefs = (typeof Device.preferredLanguages === "function" && Device.preferredLanguages()) || [];
+    const first = prefs[0] || (Device.locale && Device.locale()) || Device.language() || "";
+    return /^(ar|he|fa|ur)/i.test(first);
+  } catch (e) { return false; }
 })();
 
 const WHITE = Color.white();
@@ -119,6 +125,23 @@ function card(parent, x, title, titleIcon, show, compact) {
   return c;
 }
 
+// مواعيد الإنترنت والكهرباء: «الإنترنت بعد 12 يوماً • 7 أكتوبر»
+function billRows(parent, bills, compact) {
+  (bills || []).forEach((b) => {
+    const icon = b.key === "internet" ? "wifi" : "bolt.fill";
+    const text = b.label + " " + b.when + (compact ? "" : " • " + b.dueLabel) + (b.estimated ? " (تقديري)" : "");
+    row(parent, text, { icon, font: b.overdue ? Font.boldSystemFont(11) : Font.systemFont(11), color: b.overdue ? WHITE : SOFT });
+  });
+}
+
+// الضيوف السابقون: «سليمان الوهبي • واتساب • خرج أمس (27 سبتمبر)»
+function pastRows(parent, past, show, limit) {
+  (past || []).slice(0, limit).forEach((x) => {
+    row(parent, [show ? x.guest || x.first : "", x.sourceLabel, x.left + " (" + x.outLabel + ")"].filter(Boolean).join(" • "),
+      { icon: PLATFORM_ICON[x.source] || "arrow.uturn.backward", font: Font.systemFont(11), color: SOFT });
+  });
+}
+
 function homeBackground(w) {
   const g = new LinearGradient();
   g.colors = [new Color("#f2622a"), new Color("#c9491a")];
@@ -195,6 +218,18 @@ async function build(opts) {
   }
   if (!main) {
     row(w, "لا حجوزات قادمة", { icon: "calendar.badge.checkmark", font: Font.boldSystemFont(15), color: WHITE, iconSize: 15 });
+    if (family === "large") {
+      w.addSpacer(8);
+      if ((d.past || []).length) {
+        row(w, "الحجوزات السابقة", { icon: "clock.arrow.circlepath", font: Font.boldSystemFont(12), color: SOFT });
+        pastRows(w, d.past, show, 3);
+        w.addSpacer(6);
+      }
+      billRows(w, d.bills, false);
+    } else if (family === "medium") {
+      w.addSpacer();
+      billRows(w, d.bills, true);
+    }
     w.addSpacer();
     return w;
   }
@@ -219,6 +254,7 @@ async function build(opts) {
         { icon: PLATFORM_ICON[after.source] || "calendar", font: Font.systemFont(11), color: SOFT });
     }
     w.addSpacer();
+    billRows(w, d.bills, true);
     return w;
   }
 
@@ -231,12 +267,28 @@ async function build(opts) {
   if (next) { card(w, next, "الحجز القادم • " + next.when, "calendar.badge.clock", show, !!cur); w.addSpacer(6); }
 
   const shown = [cur, next].filter(Boolean).map((x) => x.checkin + x.checkout);
-  const rest = (d.upcoming || []).filter((x) => shown.indexOf(x.checkin + x.checkout) === -1).slice(0, cur ? 2 : 3);
+  const rest = (d.upcoming || []).filter((x) => shown.indexOf(x.checkin + x.checkout) === -1).slice(0, cur && next ? 1 : 2);
   if (rest.length) {
     row(w, "بعدها", { icon: "list.bullet", font: Font.boldSystemFont(12), color: SOFT });
     w.addSpacer(2);
     rest.forEach((x) => row(w, x.when + " • " + [nameOf(x, show), platformLine(x)].filter(Boolean).join(" • ") + " • " + x.range,
       { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(11), color: SOFT }));
+    w.addSpacer(6);
+  }
+
+  // المساحة المتبقية: السابقون أكثر حين يقلّ القادم
+  const pastLimit = cur && next ? 2 : 3;
+  if ((d.past || []).length) {
+    row(w, "الحجوزات السابقة", { icon: "clock.arrow.circlepath", font: Font.boldSystemFont(12), color: SOFT });
+    w.addSpacer(2);
+    pastRows(w, d.past, show, pastLimit);
+    w.addSpacer(6);
+  }
+
+  if ((d.bills || []).length) {
+    row(w, "الاشتراكات", { icon: "doc.text.fill", font: Font.boldSystemFont(12), color: SOFT });
+    w.addSpacer(2);
+    billRows(w, d.bills, false);
   }
 
   w.addSpacer();

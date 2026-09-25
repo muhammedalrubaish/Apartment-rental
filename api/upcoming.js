@@ -81,7 +81,76 @@ function summarize(rows) {
         arrivalsTomorrow: list.filter((b) => b.checkin === tomorrow).map((b) => item(b, today)),
         departuresTomorrow: list.filter((b) => b.checkout === tomorrow).map((b) => item(b, today)),
         upcoming: list.filter((b) => b.checkout > today).slice(0, 5).map((b) => item(b, today)),
+        // آخر ثلاثة ضيوف غادروا (الأحدث أولاً) مع متى خرج كل منهم
+        past: list.filter((b) => b.checkout <= today)
+            .sort((a, b) => (a.checkout < b.checkout ? 1 : -1))
+            .slice(0, 3)
+            .map((b) => {
+                const ago = diffDays(b.checkout, today);
+                return Object.assign(item(b, today), {
+                    ago,
+                    left: ago === 0 ? 'خرج اليوم' : ago === 1 ? 'خرج أمس' : `خرج قبل ${ago <= 10 ? ago + ' أيام' : ago + ' يوماً'}`,
+                });
+            }),
     };
+}
+
+/* مواعيد الإنترنت والكهرباء (الهجرة 0013): أقرب فاتورة مستحقة، وإلا تقدير الموعد
+   القادم = آخر فاتورة + شهر. يُعاد null إن لم تُطبَّق الهجرة، فتعمل الأداة بدونها. */
+const BILL_META = { 'إنترنت': { key: 'internet', label: 'الإنترنت' }, 'كهرباء': { key: 'power', label: 'الكهرباء' } };
+
+function addMonth(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();   // آخر يوم في الشهر التالي
+    return new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10);
+}
+
+function billItems(rows) {
+    const today = riyadhToday();
+    return rows.filter((r) => BILL_META[r.category] && r.due_date).map((r) => {
+        const meta = BILL_META[r.category];
+        let due = String(r.due_date).slice(0, 10);
+        let estimated = false;
+        if (r.status !== 'due') {
+            // آخر فاتورة مسددة: الموعد القادم تقديراً بعد شهر (ويُكرر حتى يصبح قادماً)
+            estimated = true;
+            for (let i = 0; i < 24 && due < today; i++) due = addMonth(due);
+            if (due === String(r.due_date).slice(0, 10)) due = addMonth(due);
+        }
+        const days = diffDays(today, due);
+        const when = days < 0 ? `متأخرة ${-days} ${-days === 1 ? 'يوم' : -days <= 10 ? 'أيام' : 'يوماً'}`
+            : days === 0 ? 'اليوم' : days === 1 ? 'غداً' : `بعد ${days} ${days <= 10 ? 'أيام' : 'يوماً'}`;
+        return {
+            key: meta.key,
+            label: meta.label,
+            dueDate: due,
+            dueLabel: fmtDay(due),
+            days,
+            when,
+            overdue: days < 0,
+            estimated,
+            amount: Number(r.amount) || 0,
+        };
+    }).sort((a, b) => a.days - b.days);
+}
+
+async function loadBills(token) {
+    try {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/widget_bills`, {
+            method: 'POST',
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ p_token: token }),
+        });
+        if (!r.ok) return null;
+        const rows = await r.json();
+        return Array.isArray(rows) ? billItems(rows) : null;
+    } catch (e) {
+        return null;
+    }
 }
 
 // نص «ملخص اليوم» — فارغ إن لم يكن هناك وصول/مغادرة اليوم أو غداً ولا مقيم
@@ -95,6 +164,10 @@ function digestLines(s) {
     }
     s.arrivalsTomorrow.forEach((x) => lines.push(`📅 غداً وصول: ${who(x)}`));
     s.departuresTomorrow.forEach((x) => lines.push(`📅 غداً مغادرة: ${x.first}`));
+    // تذكير بالإنترنت/الكهرباء إن كان الموعد خلال 3 أيام أو متأخراً
+    (s.bills || []).filter((b) => b.days <= 3).forEach((b) => {
+        lines.push(`${b.key === 'internet' ? '📶' : '⚡'} ${b.label}: ${b.overdue ? b.when : 'موعدها ' + b.when}${b.amount ? ' • ' + b.amount + ' ريال' : ''}`);
+    });
     return lines;
 }
 
@@ -125,6 +198,7 @@ module.exports = async (req, res) => {
         }
         const rows = await r.json();
         const summary = summarize(Array.isArray(rows) ? rows : []);
+        summary.bills = await loadBills(token);
 
         if (q.digest) {
             const key = String(req.headers['x-sync-key'] || '').trim();
@@ -150,3 +224,4 @@ module.exports = async (req, res) => {
 
 module.exports.summarize = summarize;
 module.exports.digestLines = digestLines;
+module.exports.billItems = billItems;
