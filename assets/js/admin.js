@@ -597,7 +597,73 @@
     /* ---------------------------------------------------------------------
        6. لوحة التحكم
        --------------------------------------------------------------------- */
+    /* ---------------------------------------------------------------------
+       حجوزات تحتاج إكمال: ما استُورد تلقائياً من جاذر إن وAirbnb (iCal) يصل بلا مبلغ
+       وباسم عام «ضيف Airbnb» لأن تقويم المنصات لا يحمل هذه البيانات. تُعرض هنا
+       لتُكمَل يدوياً؛ المزامنة بعدها تحدّث التواريخ فقط ولا تمسح ما أُدخل.
+       --------------------------------------------------------------------- */
+    const PLATFORM_SOURCES = ['gathern', 'airbnb', 'ical'];
+
+    function isPlaceholderGuest(name) {
+        const n = String(name || '').trim();
+        return !n || /^ضيف\s/.test(n) || /^(reserved|booked|محجوز|not available)$/i.test(n);
+    }
+
+    function incompleteBookings() {
+        const today = todayISO();
+        return state.bookings
+            .filter((b) => b.status !== 'cancelled' && b.status !== 'blocked')
+            .filter((b) => PLATFORM_SOURCES.indexOf(b.source) !== -1 || /مستورد/.test(b.note || ''))
+            .map((b) => ({ b, missing: [
+                !(Number(b.total) > 0) && 'المبلغ',
+                isPlaceholderGuest(b.guest) && 'اسم الضيف',
+            ].filter(Boolean) }))
+            .filter((x) => x.missing.length)
+            // الحالي والقادم أولاً (الأقرب)، ثم السابق (الأحدث)
+            .sort((x, y) => {
+                const xf = x.b.checkout > today, yf = y.b.checkout > today;
+                if (xf !== yf) return xf ? -1 : 1;
+                return xf ? x.b.checkin.localeCompare(y.b.checkin) : y.b.checkout.localeCompare(x.b.checkout);
+            });
+    }
+
+    function renderIncomplete() {
+        const card = $('#incomplete-card');
+        if (!card) return;
+        const list = incompleteBookings();
+        card.hidden = !list.length;
+        if (!list.length) return;
+        const n = list.length;
+        $('#incomplete-count').textContent = n === 1 ? 'حجز واحد' : n === 2 ? 'حجزان' : `${n} ${n <= 10 ? 'حجوزات' : 'حجزاً'}`;
+
+        const today = todayISO();
+        const shown = list.slice(0, 8);
+        $('#incomplete-zone').innerHTML = shown.map(({ b, missing }) => {
+            const when = b.checkout <= today ? '<span class="tag">سابق</span>'
+                : b.checkin <= today ? '<span class="tag tag-ok">مقيم الآن</span>' : '<span class="tag tag-info">قادم</span>';
+            return `<div class="list-item">
+                <div class="li-icon">${b.source === 'airbnb' ? '🏡' : b.source === 'gathern' ? '🏷️' : '🔗'}</div>
+                <div class="li-body">
+                    <h4>${escapeHtml(b.guest || 'ضيف')} ${when}</h4>
+                    <p>${escapeHtml(SOURCE_LABEL[b.source] || b.source)} • ${fmtDate(b.checkin)} ← ${fmtDate(b.checkout)} • ينقص: <b style="color:var(--warn)">${missing.join(' و')}</b></p>
+                </div>
+                <div class="li-side">
+                    <button class="btn btn-primary btn-sm" data-complete="${b.id}">إكمال</button>
+                </div>
+            </div>`;
+        }).join('') + (list.length > shown.length
+            ? `<p class="sub" style="font-size:12px;margin-top:8px">و${list.length - shown.length} غيرها — تظهر بعد إكمال هذه</p>` : '');
+
+        $$('[data-complete]', $('#incomplete-zone')).forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const b = state.bookings.find((x) => String(x.id) === btn.dataset.complete);
+                if (b) openBookingForm(null, b);
+            });
+        });
+    }
+
     function renderDashboard() {
+        renderIncomplete();
         const s = stats();
 
         // حصيلة السنة الميلادية الجارية — بالمعادلة نفسها: الإجمالي ناقص العمولة

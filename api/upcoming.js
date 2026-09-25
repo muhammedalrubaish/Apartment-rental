@@ -225,10 +225,28 @@ async function loadPrices(token, bookings) {
             body: JSON.stringify({ p_token: token }),
         });
         const rows = r.ok ? await r.json() : [];
-        return priceRanges(Array.isArray(rows) ? rows : [], sourceOf);
+        const list = Array.isArray(rows) ? rows : [];
+        // مفاتيح الحجوزات التي لها مبلغ — لمعرفة المستوردة الناقصة (بلا مبلغ)
+        const paid = new Set(list.map((x) => String(x.checkin).slice(0, 10) + '|' + String(x.checkout).slice(0, 10)));
+        return { ranges: priceRanges(list, sourceOf), paid: r.ok ? paid : null };
     } catch (e) {
-        return priceRanges([]);
+        return { ranges: priceRanges([]), paid: null };
     }
+}
+
+/* حجوزات مستوردة من المنصات تحتاج إكمالاً يدوياً في لوحة التحكم: اسم عام
+   («ضيف Airbnb») أو بلا مبلغ (إن توفرت بيانات المبالغ من الهجرة 0014).
+   العدد فقط مع أقربها — التفاصيل والإكمال في بطاقة «حجوزات تحتاج إكمال». */
+const PLATFORM_SOURCES = ['gathern', 'airbnb', 'ical'];
+function incompleteSummary(rows, paid) {
+    const list = rows.filter((b) => b && b.checkin && b.checkout && b.status !== 'cancelled' && b.status !== 'blocked'
+        && PLATFORM_SOURCES.indexOf(b.source) !== -1)
+        .filter((b) => {
+            const noName = /^ضيف\s/.test(String(b.guest || '').trim()) || !String(b.guest || '').trim();
+            const noAmount = paid ? !paid.has(String(b.checkin).slice(0, 10) + '|' + String(b.checkout).slice(0, 10)) : false;
+            return noName || noAmount;
+        });
+    return { count: list.length };
 }
 
 async function loadBills(token) {
@@ -296,7 +314,10 @@ module.exports = async (req, res) => {
         const rows = await r.json();
         const summary = summarize(Array.isArray(rows) ? rows : []);
         summary.stats = monthStats(Array.isArray(rows) ? rows : []);
-        [summary.bills, summary.prices] = await Promise.all([loadBills(token), loadPrices(token, rows)]);
+        const [bills, priced] = await Promise.all([loadBills(token), loadPrices(token, rows)]);
+        summary.bills = bills;
+        summary.prices = priced.ranges;
+        summary.incomplete = incompleteSummary(Array.isArray(rows) ? rows : [], priced.paid);
 
         if (q.digest) {
             const key = String(req.headers['x-sync-key'] || '').trim();
@@ -325,3 +346,4 @@ module.exports.digestLines = digestLines;
 module.exports.billItems = billItems;
 module.exports.monthStats = monthStats;
 module.exports.priceRanges = priceRanges;
+module.exports.incompleteSummary = incompleteSummary;

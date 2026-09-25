@@ -165,6 +165,16 @@
         <section class="view active" id="view-dashboard">
             <div class="grid grid-kpi" id="kpi-zone"></div>
 
+            <!-- حجوزات مستوردة من المنصات ناقصة البيانات (المبلغ أو اسم الضيف) — تُكمَل يدوياً -->
+            <div class="card" id="incomplete-card" hidden>
+                <div class="card-head">
+                    <h2>🧩 حجوزات تحتاج إكمال</h2>
+                    <span class="tag tag-warn" id="incomplete-count"></span>
+                    <span class="sub" style="margin-inline-start:auto">وصلت تلقائياً من المنصات بلا مبلغ أو اسم</span>
+                </div>
+                <div id="incomplete-zone"></div>
+            </div>
+
             <!-- تقييمات الضيوف من الموقع: المعلّق أولاً للاعتماد أو الحذف (الهجرة 0009) -->
             <div class="card" id="reviews-card" hidden>
                 <div class="card-head">

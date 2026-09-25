@@ -229,6 +229,17 @@ function tile(parent, o) {
   return t;
 }
 
+// تذكير: حجوزات من المنصات تنقصها بيانات — الضغط يفتح لوحة التحكم لإكمالها
+function incompleteRow(parent, inc) {
+  if (!inc || !inc.count) return false;
+  const n = inc.count;
+  const label = n === 1 ? "حجز من المنصات يحتاج إكمال" : n === 2 ? "حجزان من المنصات يحتاجان إكمال"
+    : n + (n <= 10 ? " حجوزات" : " حجزاً") + " من المنصات تحتاج إكمال";
+  const r = row(parent, label, { icon: "exclamationmark.circle.fill", font: Font.boldSystemFont(11), color: WHITE });
+  r.url = ADMIN_URL + "#dashboard";
+  return true;
+}
+
 // عدّ الحجوزات بالعربية: حجز واحد، حجزان، 3–10 حجوزات، 11+ حجزاً
 const bookingsWord = (n) => (n === 0 ? "لا حجوزات" : n === 1 ? "حجز واحد" : n === 2 ? "حجزين" : n <= 10 ? n + " حجوزات" : n + " حجزاً");
 
@@ -374,6 +385,7 @@ async function build(opts) {
       }
       billRows(w, d.bills, false);
       w.addSpacer();
+      if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
       const cw = contentWidth();
       statsTiles(w, d.stats, cw);
       w.addSpacer(6);
@@ -442,6 +454,7 @@ async function build(opts) {
   if ((d.bills || []).length) billRows(w, d.bills, false);
 
   w.addSpacer();
+  if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
   const cw = contentWidth();
   statsTiles(w, d.stats, cw);
   w.addSpacer(6);
