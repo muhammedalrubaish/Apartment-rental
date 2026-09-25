@@ -289,14 +289,13 @@
                     <div class="cal-month" id="cal-month"></div>
                     <button class="icon-btn" id="cal-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
                     <button class="btn btn-ghost btn-sm" id="cal-today">اليوم</button>
-                    <div style="margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-ghost btn-sm" id="btn-ics-export">
+                    <!-- التصدير والاستيراد أيقونات فقط (الاسم في title) — كل الأدوات في سطر واحد -->
+                    <div class="cal-tools">
+                        <button class="icon-btn" id="btn-ics-export" title="تصدير iCal" aria-label="تصدير iCal">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>
-                            تصدير iCal
                         </button>
-                        <button class="btn btn-ghost btn-sm" id="btn-ics-import">
+                        <button class="icon-btn" id="btn-ics-import" title="استيراد / مزامنة" aria-label="استيراد / مزامنة">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4M4 21h16"/></svg>
-                            استيراد / مزامنة
                         </button>
                         <button class="btn btn-primary btn-sm" id="cal-add">+ حجز</button>
                     </div>
@@ -306,11 +305,11 @@
                 <div class="cal-grid" id="cal-grid" style="margin-top:6px"></div>
 
                 <div class="cal-legend">
-                    <span><i style="background:var(--brand)"></i> الموقع المباشر</span>
+                    <span><i style="background:var(--brand)"></i> <b class="lbl-long">الموقع المباشر</b><b class="lbl-short">مباشر</b></span>
                     <span><i style="background:var(--src-gathern)"></i> جاذر إن</span>
                     <span><i style="background:var(--src-airbnb)"></i> Airbnb</span>
                     <span><i style="background:var(--src-whatsapp)"></i> واتساب</span>
-                    <span><i style="background:var(--src-block)"></i> محجوب / صيانة</span>
+                    <span><i style="background:var(--src-block)"></i> <b class="lbl-long">محجوب / صيانة</b><b class="lbl-short">محجوب</b></span>
                     <span><i style="background:var(--surface-3);border:1px solid var(--line)"></i> متاح</span>
                 </div>
             </div>

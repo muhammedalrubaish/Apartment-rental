@@ -4175,6 +4175,8 @@
         $('#cal-prev').addEventListener('click', () => { calCursor.setMonth(calCursor.getMonth() - 1); renderCalendar(); });
         $('#cal-next').addEventListener('click', () => { calCursor.setMonth(calCursor.getMonth() + 1); renderCalendar(); });
         $('#cal-today').addEventListener('click', () => { calCursor = new Date(); renderCalendar(); });
+        // الجوال يخفي زر «اليوم»: الضغط على اسم الشهر يعود للشهر الحالي
+        $('#cal-month').addEventListener('click', () => { calCursor = new Date(); renderCalendar(); });
         $('#cal-add').addEventListener('click', () => openBookingForm());
         $('#btn-ics-export').addEventListener('click', () => {
             download('calendar.ics', buildICS(), 'text/calendar;charset=utf-8');
