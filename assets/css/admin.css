@@ -876,6 +876,25 @@ textarea.input.compact { min-height: 0; height: 50px; }
     #cal-today { height: 34px; padding: 0 10px; flex-shrink: 0; }
     .cal-tools { gap: 5px; }
 
+    /* بطاقات المؤشرات أصغر: عمودان، أرقام 18px، وحواف وأيقونات أصغر؛
+       البطاقة الأخيرة المنفردة تأخذ السطر كاملاً بدل ترك فراغ بجانبها */
+    .grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .grid-kpi > .kpi:last-child:nth-child(odd) {
+        grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 12px;
+    }
+    .grid-kpi > .kpi:last-child:nth-child(odd) .kpi-value { margin-inline-start: auto; order: 2; }
+    .grid-kpi > .kpi:last-child:nth-child(odd) .kpi-foot { flex-basis: 100%; order: 3; }
+    .kpi { padding: 10px 12px; gap: 4px; border-radius: 14px; }
+    .kpi-icon { width: 24px; height: 24px; border-radius: 7px; font-size: 12px; }
+    .kpi-label { font-size: 11px; }
+    .kpi-value { font-size: 18px; letter-spacing: -0.3px; }
+    .kpi-value small { font-size: 11px; }
+    .kpi-foot { font-size: 10px; line-height: 1.45; }
+
+    /* تصفية «إيرادات السنة» في سطر خاص بها وسط البطاقة */
+    #year-preset { order: 3; margin-inline: auto !important; }
+    #year-preset button { padding: 7px 11px; font-size: 12px; }
+
     /* حجوزات الشهر: كل حجز بطاقة بلا تمرير جانبي — الاسم والحالة، ثم التواريخ
        والمصدر، ثم الإجمالي والعمولة والواصل في ثلاثة أعمدة */
     .month-table, .month-table tbody, .month-table tfoot { display: block; width: 100%; min-width: 0; }
