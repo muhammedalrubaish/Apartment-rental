@@ -121,7 +121,7 @@
         const bar = document.createElement('div');
         bar.id = 'bio-offer';
         bar.setAttribute('role', 'dialog');
-        bar.style.cssText = 'position:fixed;inset-inline:12px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:9999;'
+        bar.style.cssText = 'position:fixed;inset-inline:12px;bottom:calc(76px + max(0px, env(safe-area-inset-bottom) - 14px));z-index:9999;'
             + 'background:#fff;color:#1f2430;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:14px;'
             + 'display:flex;align-items:center;gap:10px;font-family:inherit;direction:rtl;max-width:520px;margin-inline:auto';
         bar.innerHTML = '<div style="font-size:26px">🔐</div>'
