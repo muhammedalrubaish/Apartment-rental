@@ -252,7 +252,8 @@ function priceTiles(parent, pr, width) {
   const gap = 6;
   const tw = Math.floor((width - gap) / 2);
   const txt = (x) => (x.min === x.max ? String(x.min) : x.min + " – " + x.max) + " ر.س";
-  const note = (x) => (x.configured ? "السعر المعتمد" : "من " + bookingsWord(x.count));
+  // الأسعار من الحجوزات المباشرة فقط (الموقع/واتساب)، وإلا السعر المعتمد
+  const note = (x) => (x.configured ? "السعر المعتمد" : "مباشر • من " + bookingsWord(x.count));
   const r = parent.addStack();
   r.layoutHorizontally();
   tile(r, { width: tw, height: 50, icon: "sun.max.fill", label: "وسط الأسبوع • الليلة", value: txt(pr.weekday), valueSize: 15, sub: note(pr.weekday) });

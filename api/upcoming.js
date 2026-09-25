@@ -178,14 +178,18 @@ function monthStats(rows) {
 /* أسعار الليلة الأقل والأعلى: وسط الأسبوع والويكند (الهجرة 0014).
    سعر الليلة = المبلغ ÷ الليالي، ويُصنَّف الحجز ويكند إن كانت كل لياليه خميس/جمعة،
    ووسط أسبوع إن لم يكن فيها ويكند؛ الحجز المختلط لا يُفصل بدقة فيُستبعد.
-   بلا بيانات كافية تُعرض الأسعار المعتمدة في apartments.json. */
+   بلا بيانات كافية تُعرض الأسعار المعتمدة في apartments.json.
+   الحجوزات المباشرة فقط (الموقع/واتساب/يدوي): مبالغ المنصات تُستبعد حتى لو أُدخلت،
+   ومصدر كل مبلغ يُعرف بمطابقة تاريخي الوصول والمغادرة مع حجوزات التقويم. */
+const DIRECT_SOURCES = ['direct', 'whatsapp', 'manual'];
 const WEEKEND_NIGHTS = [4, 5];   // الخميس والجمعة (getUTCDay)
 const CONFIGURED = { weekday: 220, weekend: 280 };
 
-function priceRanges(rows) {
+function priceRanges(rows, sourceOf) {
     const groups = { weekday: [], weekend: [] };
     rows.forEach((b) => {
         const ci = String(b.checkin).slice(0, 10), co = String(b.checkout).slice(0, 10);
+        if (sourceOf && DIRECT_SOURCES.indexOf(sourceOf[ci + '|' + co]) === -1) return;
         const nights = diffDays(ci, co);
         const total = Number(b.total) || 0;
         if (nights <= 0 || total <= 0) return;
@@ -203,7 +207,13 @@ function priceRanges(rows) {
     return { weekday: range(groups.weekday, CONFIGURED.weekday), weekend: range(groups.weekend, CONFIGURED.weekend) };
 }
 
-async function loadPrices(token) {
+async function loadPrices(token, bookings) {
+    const sourceOf = {};
+    (bookings || []).forEach((b) => {
+        if (b && b.checkin && b.checkout && b.status !== 'cancelled') {
+            sourceOf[String(b.checkin).slice(0, 10) + '|' + String(b.checkout).slice(0, 10)] = b.source;
+        }
+    });
     try {
         const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/widget_prices`, {
             method: 'POST',
@@ -215,7 +225,7 @@ async function loadPrices(token) {
             body: JSON.stringify({ p_token: token }),
         });
         const rows = r.ok ? await r.json() : [];
-        return priceRanges(Array.isArray(rows) ? rows : []);
+        return priceRanges(Array.isArray(rows) ? rows : [], sourceOf);
     } catch (e) {
         return priceRanges([]);
     }
@@ -286,7 +296,7 @@ module.exports = async (req, res) => {
         const rows = await r.json();
         const summary = summarize(Array.isArray(rows) ? rows : []);
         summary.stats = monthStats(Array.isArray(rows) ? rows : []);
-        [summary.bills, summary.prices] = await Promise.all([loadBills(token), loadPrices(token)]);
+        [summary.bills, summary.prices] = await Promise.all([loadBills(token), loadPrices(token, rows)]);
 
         if (q.digest) {
             const key = String(req.headers['x-sync-key'] || '').trim();
