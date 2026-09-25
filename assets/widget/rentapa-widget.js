@@ -326,15 +326,62 @@ function slimPrices(parent, pr, width) {
   tile(r, { width: tw, height: 36, icon: "sparkles", label: "الويكند • " + src(pr.weekend), value: txt(pr.weekend), valueSize: 13 });
 }
 
-// تذكير: حجوزات من المنصات تنقصها بيانات — الضغط يفتح لوحة التحكم لإكمالها
-function incompleteRow(parent, inc) {
-  if (!inc || !inc.count) return false;
-  const n = inc.count;
-  const label = n === 1 ? "حجز من المنصات يحتاج إكمال" : n === 2 ? "حجزان من المنصات يحتاجان إكمال"
-    : n + (n <= 10 ? " حجوزات" : " حجزاً") + " من المنصات تحتاج إكمال";
-  const r = row(parent, label, { icon: "exclamationmark.circle.fill", font: Font.boldSystemFont(11), color: WHITE });
-  r.url = ADMIN_URL + "#dashboard";
-  return true;
+/* زرّا «حجز سريع» و«إكمال» (حجوزات المنصات الناقصة) أسفل المعلومات.
+   مع مفتاح الكتابة (سكربت منسوخ بعد الهجرة 0015): الضغط يشغّل السكربت داخل
+   Scriptable فتظهر نماذج أصلية سريعة (handle أدناه) دون تسجيل دخول.
+   بدونه: الضغط يفتح لوحة التحكم مباشرة على نموذج الحجز أو الإكمال. */
+function hasWriteKey(opts) {
+  const k = opts && opts.WRITE_KEY;
+  return typeof k === "string" && k.length >= 32 && k.indexOf("__") !== 0;
+}
+
+function actionUrl(opts, action) {
+  if (hasWriteKey(opts)) {
+    let name = "RentAPA";
+    try { name = Script.name() || name; } catch (e) { /* الاسم الافتراضي */ }
+    return "scriptable:///run/" + encodeURIComponent(name) + "?action=" + action;
+  }
+  return ADMIN_URL + "#" + action;
+}
+
+function pill(parent, label, icon, url, width, strong) {
+  const p = parent.addStack();
+  p.layoutHorizontally();
+  p.centerAlignContent();
+  p.backgroundColor = new Color("#ffffff", strong ? 0.26 : 0.16);
+  p.cornerRadius = 11;
+  p.size = new Size(width, 24);
+  p.url = url;
+  const addIcon = () => {
+    const im = p.addImage(sym(icon));
+    im.imageSize = new Size(11, 11);
+    im.tintColor = WHITE;
+  };
+  const addLabel = () => {
+    const t = p.addText(label);
+    t.font = Font.boldSystemFont(11);
+    t.textColor = WHITE;
+    t.lineLimit = 1;
+    t.minimumScaleFactor = 0.6;
+  };
+  p.addSpacer();
+  if (RTL) { addIcon(); p.addSpacer(4); addLabel(); } else { addLabel(); p.addSpacer(4); addIcon(); }
+  p.addSpacer();
+  return p;
+}
+
+function actionPills(parent, inc, opts, width) {
+  const n = (inc && inc.count) || 0;
+  const r = parent.addStack();
+  r.layoutHorizontally();
+  const gap = 6;
+  const book = () => pill(r, "حجز سريع", "plus.circle.fill", actionUrl(opts, "book"), n ? Math.floor((width - gap) / 2) : width, true);
+  const done = () => pill(r, n === 1 ? "إكمال حجز منصة" : "إكمال " + n + " من المنصات", "exclamationmark.circle.fill",
+    actionUrl(opts, "complete"), Math.floor((width - gap) / 2), false);
+  // الأول يظهر يميناً على جوال عربي
+  if (!n) book();
+  else if (RTL) { book(); r.addSpacer(gap); done(); } else { done(); r.addSpacer(gap); book(); }
+  return r;
 }
 
 // عدّ الحجوزات بالعربية: حجز واحد، حجزان، 3–10 حجوزات، 11+ حجزاً
@@ -489,8 +536,9 @@ async function build(opts) {
       }
       billRows(w, d.bills, false);
       w.addSpacer();
-      if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
       const cw = contentWidth();
+      actionPills(w, d.incomplete, opts, cw);
+      w.addSpacer(6);
       compareTiles(w, d.stats, d.prevStats, cw);
       w.addSpacer(6);
       slimPrices(w, d.prices, cw);
@@ -547,14 +595,207 @@ async function build(opts) {
       { icon: "clock.arrow.circlepath", font: Font.systemFont(11), color: SOFT });
   }
   billRows(w, d.bills, true);
-  incompleteRow(w, d.incomplete);
 
   w.addSpacer();
   const cw = contentWidth();
+  actionPills(w, d.incomplete, opts, cw);
+  w.addSpacer(6);
   compareTiles(w, d.stats, d.prevStats, cw);
   w.addSpacer(6);
   slimPrices(w, d.prices, cw);
   return w;
 }
 
-module.exports = { build };
+/* ---------------------------------------------------------------------
+   الحجز السريع والإكمال — نماذج أصلية داخل Scriptable (بعد الضغط على الزر)
+   تُكتب في القاعدة عبر دوال الهجرة 0015 بمفتاح الكتابة، والقاعدة ترفض أي
+   حجز يتقاطع مع حجز قائم.
+   --------------------------------------------------------------------- */
+const SUPABASE_URL = "https://divoyxodxkioxugrphby.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_qw9IiQ52_WFip-4gNX4lkA_CZA0VFzf";
+const MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+const SOURCES = [
+  { id: "whatsapp", label: "واتساب" },
+  { id: "direct", label: "الموقع المباشر" },
+  { id: "gathern", label: "جاذر إن" },
+  { id: "airbnb", label: "Airbnb" },
+  { id: "manual", label: "إضافة يدوية" },
+  { id: "block", label: "حجب / صيانة" },
+];
+const SOURCE_NAME = { whatsapp: "واتساب", direct: "الموقع المباشر", gathern: "جاذر إن", airbnb: "Airbnb", manual: "يدوي", block: "حجب", ical: "تقويم خارجي" };
+
+const DAY_MS = 86400000;
+const iso = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const fromIso = (s) => { const p = String(s).split("-").map(Number); return new Date(p[0], p[1] - 1, p[2], 12); };
+const dayLabel = (s) => { const d = fromIso(s); return d.getDate() + " " + MONTHS[d.getMonth()]; };
+// أرقام عربية/فارسية ← لاتينية، وإزالة الفواصل
+const latin = (s) => String(s || "").replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/[۰-۹]/g, (c) => "۰۱۲۳۴۵۶۷۸۹".indexOf(c)).replace(/[,،\s]/g, "");
+const num = (s) => { const v = parseFloat(latin(s)); return isFinite(v) && v >= 0 ? v : null; };
+const nightsWord = (n) => (n === 1 ? "ليلة واحدة" : n === 2 ? "ليلتان" : n <= 10 ? n + " ليالٍ" : n + " ليلة");
+const isPlaceholder = (g) => !String(g || "").trim() || /^ضيف\s/.test(String(g).trim()) || /^(reserved|booked|محجوز|not available)$/i.test(String(g).trim());
+
+async function rpc(fn, body) {
+  const req = new Request(SUPABASE_URL + "/rest/v1/rpc/" + fn);
+  req.method = "POST";
+  req.timeoutInterval = 20;
+  req.headers = { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY, "Content-Type": "application/json" };
+  req.body = JSON.stringify(body);
+  let j = null;
+  try { j = JSON.parse(await req.loadString()); } catch (e) {
+    if (!req.response || !req.response.statusCode) throw new Error("تعذّر الاتصال — تحقق من الإنترنت");
+  }
+  const code = req.response && req.response.statusCode;
+  if (code >= 200 && code < 300) return j;
+  const msg = (j && (j.message || j.hint || j.code)) || "";
+  if (/dates taken/.test(msg)) throw new Error("عفواً الأيام المختارة محجوزة");
+  if (/invalid widget key/.test(msg)) throw new Error("مفتاح الأداة غير صالح — انسخ السكربت من لوحة التحكم ← الإشعارات من جديد");
+  if (/invalid dates/.test(msg)) throw new Error("تواريخ غير صحيحة (الحد 60 ليلة)");
+  if (/booking not found/.test(msg)) throw new Error("الحجز لم يعد يحتاج إكمالاً أو أُلغي");
+  if (/PGRST202|Could not find the function/.test(msg + (j && j.code))) throw new Error("طبّق الهجرة 0015 في Supabase أولاً");
+  throw new Error("رفض الخادم الطلب (" + code + ")" + (msg ? ": " + msg : ""));
+}
+
+async function say(title, message, buttons) {
+  const a = new Alert();
+  a.title = title;
+  a.message = message || "";
+  (buttons || ["حسناً"]).forEach((b) => a.addAction(b));
+  return a.present();
+}
+
+async function pickCheckin() {
+  const dp = new DatePicker();
+  dp.initialDate = new Date();
+  dp.minimumDate = new Date(Date.now() - 60 * DAY_MS);   // لتسجيل حجز سابق فات
+  try { return await dp.pickDate(); } catch (e) { return null; }   // أُلغي الاختيار
+}
+
+async function quickBook(key) {
+  const s = new Alert();
+  s.title = "حجز سريع";
+  s.message = "من أين الحجز؟";
+  SOURCES.forEach((x) => s.addAction(x.label));
+  s.addCancelAction("إلغاء");
+  const si = await s.presentSheet();
+  if (si < 0) return;
+  const src = SOURCES[si].id;
+
+  // التاريخ والليالي — يُعاد السؤال إن كانت الأيام محجوزة
+  let ci, co, nights;
+  for (;;) {
+    const picked = await pickCheckin();
+    if (!picked) return;
+    ci = iso(picked);
+    const n = new Alert();
+    n.title = "عدد الليالي";
+    n.message = "الدخول " + dayLabel(ci);
+    const f = n.addTextField("عدد الليالي", "1");
+    f.setNumberPadKeyboard();
+    n.addAction("التالي");
+    n.addCancelAction("إلغاء");
+    if (await n.present() < 0) return;
+    nights = Math.round(num(n.textFieldValue(0)) || 0);
+    if (nights < 1 || nights > 60) { await say("عدد غير صحيح", "اكتب عدد الليالي من 1 إلى 60"); continue; }
+    co = iso(new Date(fromIso(ci).getTime() + nights * DAY_MS));
+    let free;
+    try { free = await rpc("widget_dates_free", { p_key: key, p_checkin: ci, p_checkout: co }); }
+    catch (e) { await say("تعذّر التحقق", e.message); return; }
+    if (free) break;
+    const again = await say("عفواً الأيام المختارة محجوزة", dayLabel(ci) + " ← " + dayLabel(co) + " تتقاطع مع حجز قائم", ["اختيار تاريخ آخر", "إلغاء"]);
+    if (again !== 0) return;
+  }
+
+  let guest = "", phone = "", total = 0, fee = 0;
+  if (src !== "block") {
+    const g = new Alert();
+    g.title = "بيانات الضيف";
+    g.message = SOURCE_NAME[src] + " • " + dayLabel(ci) + " ← " + dayLabel(co) + " • " + nightsWord(nights);
+    g.addTextField("اسم الضيف", "");
+    g.addTextField("الجوال (اختياري)", "").setPhonePadKeyboard();
+    g.addTextField("المبلغ الإجمالي (ر.س)", "").setDecimalPadKeyboard();
+    const platform = src === "gathern" || src === "airbnb";
+    if (platform) g.addTextField("عمولة المنصة (ر.س) — اختياري", "").setDecimalPadKeyboard();
+    g.addAction("حفظ الحجز");
+    g.addCancelAction("إلغاء");
+    if (await g.present() < 0) return;
+    guest = g.textFieldValue(0).trim();
+    phone = latin(g.textFieldValue(1));
+    total = num(g.textFieldValue(2)) || 0;
+    if (platform) fee = num(g.textFieldValue(3)) || 0;
+  }
+
+  try {
+    await rpc("widget_quick_book", {
+      p_key: key, p_source: src, p_checkin: ci, p_checkout: co,
+      p_guest: guest, p_phone: phone, p_total: total, p_commission: fee,
+    });
+  } catch (e) { await say("لم يُحفظ الحجز", e.message); return; }
+  await say(src === "block" ? "✅ حُجبت الأيام" : "✅ تم الحجز",
+    [guest, SOURCE_NAME[src], dayLabel(ci) + " ← " + dayLabel(co), nightsWord(nights), total ? total + " ر.س" : ""].filter(Boolean).join(" • ")
+    + "\nيظهر في لوحة التحكم والتقويم الآن، وفي الأداة عند تحديثها التالي.");
+}
+
+async function completeFlow(key) {
+  let saved = false;
+  for (;;) {
+    let list;
+    try { list = await rpc("widget_pending", { p_key: key }); }
+    catch (e) { await say("تعذّر التحميل", e.message); return; }
+    if (!list || !list.length) {
+      await say(saved ? "✅ حُفظ — اكتملت كل الحجوزات" : "✅ لا حجوزات تحتاج إكمال", "كل حجوزات المنصات مكتملة البيانات");
+      return;
+    }
+
+    const today = iso(new Date());
+    const a = new Alert();
+    a.title = saved ? "✅ حُفظ — التالي؟" : "إكمال حجوزات المنصات";
+    a.message = "اختر الحجز لإضافة اسم الضيف والمبلغ";
+    list.forEach((b) => a.addAction((SOURCE_NAME[b.source] || b.source) + " • " + dayLabel(b.checkin) + " ← " + dayLabel(b.checkout)
+      + (b.checkout <= today ? " (سابق)" : b.checkin <= today ? " (مقيم)" : "")));
+    a.addCancelAction("إغلاق");
+    const i = await a.presentSheet();
+    if (i < 0) return;
+    const b = list[i];
+
+    const missing = [isPlaceholder(b.guest) && "الاسم", !(Number(b.total) > 0) && "المبلغ"].filter(Boolean);
+    const f = new Alert();
+    f.title = "إكمال الحجز";
+    f.message = (SOURCE_NAME[b.source] || b.source) + " • " + dayLabel(b.checkin) + " ← " + dayLabel(b.checkout)
+      + (missing.length ? "\nينقص: " + missing.join(" و") : "");
+    f.addTextField("اسم الضيف", isPlaceholder(b.guest) ? "" : b.guest);
+    f.addTextField("الجوال (اختياري)", b.phone || "").setPhonePadKeyboard();
+    f.addTextField("المبلغ الإجمالي (ر.س)", Number(b.total) > 0 ? String(b.total) : "").setDecimalPadKeyboard();
+    f.addTextField("عمولة المنصة (ر.س)", Number(b.commission) > 0 ? String(b.commission) : "").setDecimalPadKeyboard();
+    f.addAction("حفظ");
+    f.addCancelAction("رجوع");
+    if (await f.present() < 0) continue;
+
+    const guest = f.textFieldValue(0).trim();
+    const total = num(f.textFieldValue(2));
+    const fee = num(f.textFieldValue(3));
+    try {
+      await rpc("widget_complete", {
+        p_key: key, p_id: b.id,
+        p_guest: guest || null, p_phone: latin(f.textFieldValue(1)) || null,
+        p_total: total, p_commission: fee,
+      });
+    } catch (e) { await say("لم يُحفظ", e.message); continue; }
+    saved = true;   // القائمة تُحمَّل من جديد: ما اكتمل يختفي منها
+  }
+}
+
+// يُستدعى من المُحمِّل عند التشغيل داخل التطبيق بـ ?action=… — يعيد true إن تولّى الطلب
+async function handle(opts, params) {
+  const action = params && params.action;
+  if (action !== "book" && action !== "complete") return false;
+  if (!hasWriteKey(opts)) {
+    const r = await say("يلزم تحديث السكربت", "لتفعيل الحجز السريع من الأداة: لوحة التحكم ← الإشعارات ← نسخ السكربت، ثم ألصقه مكان القديم في Scriptable.\nأو افتح لوحة التحكم الآن.", ["فتح لوحة التحكم", "إغلاق"]);
+    if (r === 0) Safari.open(ADMIN_URL + "#" + action);
+    return true;
+  }
+  if (action === "book") await quickBook(opts.WRITE_KEY);
+  else await completeFlow(opts.WRITE_KEY);
+  return true;
+}
+
+module.exports = { build, handle };

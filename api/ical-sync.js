@@ -138,6 +138,8 @@ async function feedStatus(key) {
 async function notifyChanges(key, results, prevErrors, before, after) {
     const lines = [];
     let alert = false;
+    // حجز منصة جديد يصل بلا اسم ولا مبلغ: الإشعار يفتح نموذج إكماله مباشرة
+    let completeUrl = null;
 
     const added = results.filter((f) => f.ok && f.added);
     const removed = results.filter((f) => f.ok && f.removed);
@@ -148,6 +150,9 @@ async function notifyChanges(key, results, prevErrors, before, after) {
         const goneRanges = (before || []).filter((b) => !afterSet.has(rangeKey(b)));
         if (added.length) {
             lines.push(`🏠 حجز جديد من ${added.map((f) => f.name).join(' و')}`);
+            completeUrl = newRanges.length === 1
+                ? `/admin#complete=${String(newRanges[0].checkin).slice(0, 10)}_${String(newRanges[0].checkout).slice(0, 10)}`
+                : '/admin#complete';
             newRanges.slice(0, 4).forEach((b) => lines.push(`• ${fmtDay(b.checkin)} ← ${fmtDay(b.checkout)}`));
         }
         if (removed.length) {
@@ -166,7 +171,7 @@ async function notifyChanges(key, results, prevErrors, before, after) {
     return sendToOwner(key, {
         title: alert ? '⚠️ مزامنة التقويم' : '📅 تحديث الحجوزات',
         body: lines.join('\n'),
-        url: '/admin#calendar',
+        url: !alert && !removed.length && completeUrl ? completeUrl : '/admin#calendar',
         tag: alert ? 'ical-alert' : undefined,
     });
 }

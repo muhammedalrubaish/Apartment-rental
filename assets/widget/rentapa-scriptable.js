@@ -10,9 +10,12 @@
 //   1) ثبّت Scriptable ← زر + ← ألصق هذا النص كاملاً ← سمّه RentAPA
 //   2) الشاشة الرئيسية أو شاشة القفل: أضف أداة Scriptable ← اضغطها ← Script: RentAPA
 //
-// ⚠️ الرابط أدناه خاص بك ويقرأ حجوزاتك — لا تشاركه مع أحد.
+// ⚠️ الرابط والمفتاح أدناه خاصان بك (قراءة الحجوزات وإضافتها) — لا تشاركهما مع أحد.
 
 const DATA_URL = "__DATA_URL__";
+
+// مفتاح الحجز السريع وإكمال حجوزات المنصات من الأداة (الهجرة 0015)
+const WRITE_KEY = "__WRITE_KEY__";
 
 // true: اسم الضيف ظاهر — false: التواريخ والمنصة فقط (شاشة القفل يراها من يرى جوالك)
 const SHOW_NAMES = true;
@@ -32,15 +35,21 @@ try {
 } catch (e) { /* نستخدم التصميم المحفوظ */ }
 
 let widget;
+let handled = false;   // ضغطة «حجز سريع» / «إكمال» في الأداة تفتح نماذجها بدل المعاينة
 if (fm.fileExists(codePath)) {
   const mod = importModule(codePath);
-  widget = await mod.build({ DATA_URL, SHOW_NAMES, family: config.widgetFamily || "large" });
+  const opts = { DATA_URL, WRITE_KEY, SHOW_NAMES, family: config.widgetFamily || "large" };
+  const params = args.queryParameters || {};
+  if (!config.runsInWidget && params.action && mod.handle) handled = await mod.handle(opts, params);
+  if (!handled) widget = await mod.build(opts);
 } else {
   widget = new ListWidget();
   widget.addText("RentAPA: تعذّر تحميل الأداة — تحقق من الإنترنت ثم أعد المحاولة");
 }
 
-if (config.runsInWidget) {
+if (handled) {
+  // انتهى النموذج — لا معاينة
+} else if (config.runsInWidget) {
   Script.setWidget(widget);
 } else {
   await widget.presentLarge();   // معاينة عند تشغيل السكربت من داخل التطبيق

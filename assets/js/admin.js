@@ -2014,6 +2014,20 @@
        يُجهَّز مسبقاً عند عرض البطاقة، لأن نسخ النص على iPhone يجب أن يتم داخل الضغطة نفسها. */
     let widgetScript = '';
 
+    // مفتاح كتابة الأداة (الهجرة 0015) — null إن لم تُطبَّق بعد
+    async function loadWidgetWriteKey() {
+        try {
+            const client = sbc();
+            if (!client) return null;
+            const { data, error } = await client.from('widget_write_key').select('key').eq('id', 1).maybeSingle();
+            if (error || !data || !data.key) return null;
+            return data.key;
+        } catch (e) {
+            console.warn('[widget] write key', e);
+            return null;
+        }
+    }
+
     async function renderWidgetCard() {
         const st = $('#widget-state');
         if (!st) return;
@@ -2029,9 +2043,12 @@
             const r = await fetch('/assets/widget/rentapa-scriptable.js', { cache: 'no-store' });
             if (!r.ok) throw new Error('تعذّر تحميل قالب السكربت');
             const url = `${location.origin}/api/upcoming?token=${encodeURIComponent(token)}`;
+            // مفتاح الحجز السريع من الأداة — بدونه (قبل الهجرة 0015) تفتح أزرار الأداة لوحة التحكم
+            const writeKey = await loadWidgetWriteKey();
             widgetScript = (await r.text()).replace('__DATA_URL__', url);
-            st.className = 'tag tag-ok';
-            st.textContent = 'جاهز';
+            if (writeKey) widgetScript = widgetScript.replace('__WRITE_KEY__', writeKey);
+            st.className = writeKey ? 'tag tag-ok' : 'tag tag-warn';
+            st.textContent = writeKey ? 'جاهز' : 'جاهز — الحجز السريع يحتاج الهجرة 0015';
             btn.disabled = false;
         } catch (e) {
             console.error('[widget]', e);
@@ -4159,6 +4176,17 @@
     /* ---------------------------------------------------------------------
        15. الإقلاع
        --------------------------------------------------------------------- */
+    // يُنفَّذ بعد تحميل الحجوزات، حتى يتحقق النموذج من التقاطع ويجد الحجز المطلوب
+    function runIntent(action, arg) {
+        if (action === 'book') { openBookingForm({}); return; }
+        const list = incompleteBookings();
+        if (!list.length) { toast('لا حجوزات من المنصات تحتاج إكمال ✅'); return; }
+        const id = arg ? decodeURIComponent(arg) : '';
+        const hit = list.find(({ b }) => String(b.id) === id || `${b.checkin}_${b.checkout}` === id) || list[0];
+        openBookingForm(null, hit.b);
+        if (list.length > 1) toast(`بعد هذا: ${list.length - 1} ${list.length - 1 === 1 ? 'حجز آخر' : 'حجوزات أخرى'} في بطاقة «حجوزات تحتاج إكمال»`);
+    }
+
     async function start() {
         save();            // ثبّت البيانات الأولية عند أول فتح
         applyTheme();
@@ -4170,9 +4198,20 @@
         updateBadges();
         // اعرض الواجهة فوراً، ثم تُحدَّث تلقائياً حالما تصل البيانات من الخادم
         const hash = location.hash.replace('#', '');
+        /* روابط مباشرة من أداة الجوال والإشعارات:
+           #book → نموذج حجز جديد، #complete[=id] → إكمال حجز منصة ناقص */
+        const intent = /^(book|complete)(?:=(.+))?$/.exec(hash);
         go(PAGE_META[hash] ? hash : 'dashboard');
 
-        loadBookings();            // تحميل الحجوزات الحقيقية من Supabase
+        const bookingsReady = loadBookings();   // تحميل الحجوزات الحقيقية من Supabase
+        if (intent) bookingsReady.then(() => runIntent(intent[1], intent[2]));
+        // اللوحة مفتوحة أصلاً: الضغط على إشعار يغيّر الرابط فقط (#complete=…) دون إعادة تحميل
+        window.addEventListener('hashchange', () => {
+            const m = /^#(book|complete)(?:=(.+))?$/.exec(location.hash);
+            if (!m) return;
+            go('dashboard');
+            runIntent(m[1], m[2]);
+        });
         loadExpenses();            // تحميل المصاريف الحقيقية من Supabase
         loadReviews();             // تقييمات الضيوف بانتظار الاعتماد
         feedsReady = loadServerFeeds();   // روابط المنصات من القاعدة (المزامنة من الخادم)
