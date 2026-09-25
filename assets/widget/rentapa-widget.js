@@ -182,27 +182,27 @@ function tile(parent, o) {
   t.centerAlignContent();
   t.backgroundColor = new Color("#ffffff", o.dim ? 0.09 : 0.16);
   t.cornerRadius = 12;
-  t.setPadding(5, 6, 5, 6);
+  t.setPadding(4, 5, 4, 5);
   t.size = new Size(o.width, o.height);
 
   const head = t.addStack();
   head.addSpacer();
   const ic = head.addImage(sym(o.icon));
-  ic.imageSize = new Size(10, 10);
+  ic.imageSize = new Size(9, 9);
   ic.tintColor = SOFT;
   head.addSpacer(3);
   const hl = head.addText(o.label);
-  hl.font = Font.systemFont(9);
+  hl.font = Font.systemFont(8);
   hl.textColor = SOFT;
   hl.lineLimit = 1;
   hl.minimumScaleFactor = 0.6;
   head.addSpacer();
 
-  t.addSpacer(2);
+  t.addSpacer(1);
   const vs = t.addStack();
   vs.addSpacer();
   const v = vs.addText(o.value);
-  v.font = Font.boldRoundedSystemFont(o.valueSize || 17);
+  v.font = Font.boldRoundedSystemFont(o.valueSize || 15);
   v.textColor = WHITE;
   v.lineLimit = 1;
   v.minimumScaleFactor = 0.5;
@@ -212,18 +212,18 @@ function tile(parent, o) {
     const ss = t.addStack();
     ss.addSpacer();
     const st = ss.addText(o.sub);
-    st.font = Font.systemFont(8);
+    st.font = Font.systemFont(7);
     st.textColor = SOFT;
     st.lineLimit = 1;
     st.minimumScaleFactor = 0.6;
     ss.addSpacer();
   }
   if (o.frac != null) {
-    t.addSpacer(3);
+    t.addSpacer(2);
     const bs = t.addStack();
     bs.addSpacer();
-    const img = bs.addImage(progressBar(o.frac, o.width - 20, 5));
-    img.imageSize = new Size(o.width - 20, 5);
+    const img = bs.addImage(progressBar(o.frac, o.width - 18, 4));
+    img.imageSize = new Size(o.width - 18, 4);
     bs.addSpacer();
   }
   return t;
@@ -248,13 +248,13 @@ const bookingsWord = (n) => (n === 0 ? "لا حجوزات" : n === 1 ? "حجز �
 function statsTiles(parent, st, width, past) {
   if (!st) return;
   const gap = 6;
-  const h = 56;
+  const h = 44;   // صفّا الشهر والأسعار يتسعان أسفل الأداة الكبيرة
   const tw = Math.floor((width - gap * 2) / 3);
   const r = parent.addStack();
   r.layoutHorizontally();
   const inMonth = past ? " • " + st.month : "";
   tile(r, { width: tw, height: h, dim: past, icon: past ? "clock.arrow.circlepath" : "calendar", label: "حجوزات " + st.month,
-    value: String(st.bookings), frac: null, sub: st.bookings === 0 ? "حجوزات" : bookingsWord(st.bookings).replace(/^\d+ /, "") });
+    value: String(st.bookings), frac: null });
   r.addSpacer(gap);
   tile(r, { width: tw, height: h, dim: past, icon: "moon.fill", label: "محجوزة" + inMonth,
     value: st.bookedNights + "/" + st.daysInMonth, frac: st.daysInMonth ? st.bookedNights / st.daysInMonth : 0 });
@@ -274,9 +274,9 @@ function priceTiles(parent, pr, width) {
   const note = (x) => (x.configured ? "السعر المعتمد" : "مباشر • من " + bookingsWord(x.count));
   const r = parent.addStack();
   r.layoutHorizontally();
-  tile(r, { width: tw, height: 50, icon: "sun.max.fill", label: "وسط الأسبوع • الليلة", value: txt(pr.weekday), valueSize: 15, sub: note(pr.weekday) });
+  tile(r, { width: tw, height: 40, icon: "sun.max.fill", label: "وسط الأسبوع • الليلة", value: txt(pr.weekday), valueSize: 13, sub: note(pr.weekday) });
   r.addSpacer(gap);
-  tile(r, { width: tw, height: 50, icon: "sparkles", label: "الويكند • الليلة", value: txt(pr.weekend), valueSize: 15, sub: note(pr.weekend) });
+  tile(r, { width: tw, height: 40, icon: "sparkles", label: "الويكند • الليلة", value: txt(pr.weekend), valueSize: 13, sub: note(pr.weekend) });
 }
 
 // عرض المحتوى الداخلي للأداة الكبيرة بالنقاط (يختلف قليلاً بين أجهزة iPhone)
@@ -464,9 +464,9 @@ async function build(opts) {
   w.addSpacer();
   if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
   const cw = contentWidth();
-  if (d.prevStats) { statsTiles(w, d.prevStats, cw, true); w.addSpacer(5); }
+  if (d.prevStats) { statsTiles(w, d.prevStats, cw, true); w.addSpacer(4); }
   statsTiles(w, d.stats, cw);
-  w.addSpacer(6);
+  w.addSpacer(4);
   priceTiles(w, d.prices, cw);
   return w;
 }
