@@ -139,13 +139,16 @@ function billItems(rows) {
    - bookings: عدد الحجوزات التي لها ليالٍ داخل الشهر
    - bookedNights: الليالي المحجوزة في الشهر (دون تكرار التداخل) من أصل daysInMonth
    - freeLeft: الليالي المتاحة من اليوم حتى نهاية الشهر (لا حجز ولا حجب) من أصل daysLeft */
-function monthStats(rows) {
+/* offset = -1 للشهر السابق: «المتاحة» هناك = الليالي التي لم تُحجز طوال الشهر */
+function monthStats(rows, offset) {
     const today = riyadhToday();
-    const monthStart = today.slice(0, 8) + '01';
-    const [y, m] = today.split('-').map(Number);
-    const monthEnd = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);   // أول الشهر التالي
+    const [ty, tm] = today.split('-').map(Number);
+    const off = offset || 0;
+    const monthStart = new Date(Date.UTC(ty, tm - 1 + off, 1)).toISOString().slice(0, 10);
+    const monthEnd = new Date(Date.UTC(ty, tm + off, 1)).toISOString().slice(0, 10);   // أول الشهر التالي
     const daysInMonth = diffDays(monthStart, monthEnd);
-    const daysLeft = diffDays(today, monthEnd);
+    const countFrom = off === 0 ? today : monthStart;   // الشهر الحالي: من اليوم فقط
+    const daysLeft = diffDays(countFrom, monthEnd);
 
     const booked = new Set();
     const blocked = new Set();
@@ -162,7 +165,7 @@ function monthStats(rows) {
     });
 
     let freeLeft = 0;
-    for (let dd = today; dd < monthEnd; dd = addDays(dd, 1)) if (!booked.has(dd) && !blocked.has(dd)) freeLeft++;
+    for (let dd = countFrom; dd < monthEnd; dd = addDays(dd, 1)) if (!booked.has(dd) && !blocked.has(dd)) freeLeft++;
 
     return {
         month: new Date(monthStart + 'T00:00:00Z').toLocaleDateString('ar-u-nu-latn', { month: 'long', timeZone: 'UTC' }),
@@ -313,7 +316,8 @@ module.exports = async (req, res) => {
         }
         const rows = await r.json();
         const summary = summarize(Array.isArray(rows) ? rows : []);
-        summary.stats = monthStats(Array.isArray(rows) ? rows : []);
+        summary.stats = monthStats(Array.isArray(rows) ? rows : [], 0);
+        summary.prevStats = monthStats(Array.isArray(rows) ? rows : [], -1);
         const [bills, priced] = await Promise.all([loadBills(token), loadPrices(token, rows)]);
         summary.bills = bills;
         summary.prices = priced.ranges;

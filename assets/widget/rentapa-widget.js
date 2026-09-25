@@ -180,9 +180,9 @@ function tile(parent, o) {
   const t = parent.addStack();
   t.layoutVertically();
   t.centerAlignContent();
-  t.backgroundColor = new Color("#ffffff", 0.16);
+  t.backgroundColor = new Color("#ffffff", o.dim ? 0.09 : 0.16);
   t.cornerRadius = 12;
-  t.setPadding(6, 6, 6, 6);
+  t.setPadding(5, 6, 5, 6);
   t.size = new Size(o.width, o.height);
 
   const head = t.addStack();
@@ -202,7 +202,7 @@ function tile(parent, o) {
   const vs = t.addStack();
   vs.addSpacer();
   const v = vs.addText(o.value);
-  v.font = Font.boldRoundedSystemFont(o.valueSize || 18);
+  v.font = Font.boldRoundedSystemFont(o.valueSize || 17);
   v.textColor = WHITE;
   v.lineLimit = 1;
   v.minimumScaleFactor = 0.5;
@@ -243,18 +243,25 @@ function incompleteRow(parent, inc) {
 // عدّ الحجوزات بالعربية: حجز واحد، حجزان، 3–10 حجوزات، 11+ حجزاً
 const bookingsWord = (n) => (n === 0 ? "لا حجوزات" : n === 1 ? "حجز واحد" : n === 2 ? "حجزين" : n <= 10 ? n + " حجوزات" : n + " حجزاً");
 
-// ثلاثة مؤشرات للشهر جنباً إلى جنب (أول مؤشر يظهر يميناً على جوال عربي)
-function statsTiles(parent, st, width) {
+// ثلاثة مؤشرات للشهر جنباً إلى جنب (أول مؤشر يظهر يميناً على جوال عربي).
+// past: الشهر السابق — إطارات أخفت، و«المتاحة» تصبح «لم تُحجز» طوال الشهر
+function statsTiles(parent, st, width, past) {
   if (!st) return;
   const gap = 6;
+  const h = 56;
   const tw = Math.floor((width - gap * 2) / 3);
   const r = parent.addStack();
   r.layoutHorizontally();
-  tile(r, { width: tw, height: 62, icon: "calendar", label: "حجوزات " + st.month, value: String(st.bookings), sub: bookingsWord(st.bookings).replace(/^\d+ /, "") });
+  const inMonth = past ? " • " + st.month : "";
+  tile(r, { width: tw, height: h, dim: past, icon: past ? "clock.arrow.circlepath" : "calendar", label: "حجوزات " + st.month,
+    value: String(st.bookings), frac: null, sub: st.bookings === 0 ? "حجوزات" : bookingsWord(st.bookings).replace(/^\d+ /, "") });
   r.addSpacer(gap);
-  tile(r, { width: tw, height: 62, icon: "moon.fill", label: "ليالٍ محجوزة", value: st.bookedNights + "/" + st.daysInMonth, frac: st.daysInMonth ? st.bookedNights / st.daysInMonth : 0 });
+  tile(r, { width: tw, height: h, dim: past, icon: "moon.fill", label: "محجوزة" + inMonth,
+    value: st.bookedNights + "/" + st.daysInMonth, frac: st.daysInMonth ? st.bookedNights / st.daysInMonth : 0 });
   r.addSpacer(gap);
-  tile(r, { width: tw, height: 62, icon: "calendar.badge.plus", label: "متاحة للشهر", value: String(st.freeLeft), frac: st.daysLeft ? st.freeLeft / st.daysLeft : 0 });
+  tile(r, { width: tw, height: h, dim: past, icon: past ? "calendar.badge.minus" : "calendar.badge.plus",
+    label: past ? "لم تُحجز" + inMonth : "متاحة للشهر",
+    value: String(st.freeLeft), frac: st.daysLeft ? st.freeLeft / st.daysLeft : 0 });
 }
 
 // سعر الليلة الأقل–الأعلى: وسط الأسبوع والويكند
@@ -387,6 +394,7 @@ async function build(opts) {
       w.addSpacer();
       if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
       const cw = contentWidth();
+      if (d.prevStats) { statsTiles(w, d.prevStats, cw, true); w.addSpacer(5); }
       statsTiles(w, d.stats, cw);
       w.addSpacer(6);
       priceTiles(w, d.prices, cw);
@@ -443,7 +451,7 @@ async function build(opts) {
 
   // المساحة المتبقية: السابقون أكثر حين يقلّ القادم
   // المساحة محدودة: مع مؤشرات الشهر والأسعار أسفل الأداة يُكتفى بضيفين سابقين
-  const pastLimit = cur && next ? 1 : 2;
+  const pastLimit = (cur && next) || (d.incomplete && d.incomplete.count) ? 1 : 2;
   if ((d.past || []).length) {
     row(w, "الحجوزات السابقة", { icon: "clock.arrow.circlepath", font: Font.boldSystemFont(12), color: SOFT });
     w.addSpacer(2);
@@ -456,6 +464,7 @@ async function build(opts) {
   w.addSpacer();
   if (incompleteRow(w, d.incomplete)) w.addSpacer(5);
   const cw = contentWidth();
+  if (d.prevStats) { statsTiles(w, d.prevStats, cw, true); w.addSpacer(5); }
   statsTiles(w, d.stats, cw);
   w.addSpacer(6);
   priceTiles(w, d.prices, cw);
