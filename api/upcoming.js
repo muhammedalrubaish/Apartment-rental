@@ -1,0 +1,152 @@
+// api/upcoming.js — الحجوزات القادمة: لأداة شاشة القفل (Scriptable) وللملخص الصباحي
+//
+// GET /api/upcoming?token=<رمز تصدير التقويم>
+//   → JSON: المقيم الآن، الحجز القادم، وصول/مغادرة اليوم، وأقرب 5 حجوزات
+//     (نفس رمز رابط iCal في لوحة التحكم — الدالة ical_bookings ترفض أي رمز خاطئ)
+//
+// GET /api/upcoming?token=…&digest=1   مع ترويسة X-Sync-Key
+//   → يرسل أيضاً «ملخص اليوم» إشعاراً لجوال المالك (تستدعيه مهمة pg_cron كل صباح
+//     — الهجرة 0012). بلا حجوزات اليوم أو غداً لا يُرسل شيء، إلا مع force=1 (زر التجربة).
+//
+// التواريخ بتوقيت الرياض (UTC+3 بلا توقيت صيفي).
+
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://divoyxodxkioxugrphby.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_qw9IiQ52_WFip-4gNX4lkA_CZA0VFzf';
+
+// الإشعارات اختيارية: لو تعذّر تحميل مكتبتها يبقى رد JSON للأداة يعمل
+let sendToOwner = null;
+try { ({ sendToOwner } = require('./_push')); } catch (e) { console.error('[upcoming] push unavailable', e.message); }
+
+const SOURCE_LABEL = {
+    direct: 'مباشر', whatsapp: 'واتساب', gathern: 'جاذر إن', airbnb: 'Airbnb',
+    ical: 'iCal', manual: 'يدوي',
+};
+
+const DAY = 24 * 60 * 60 * 1000;
+const riyadhToday = () => new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
+const diffDays = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / DAY);
+const fmtDay = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('ar-u-nu-latn', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+const fmtWeekday = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('ar-u-nu-latn', { weekday: 'long', timeZone: 'UTC' });
+
+const nightsWord = (n) => (n === 1 ? 'ليلة واحدة' : n === 2 ? 'ليلتان' : n <= 10 ? `${n} ليالٍ` : `${n} ليلة`);
+function whenWord(days) {
+    if (days <= 0) return 'اليوم';
+    if (days === 1) return 'غداً';
+    if (days === 2) return 'بعد يومين';
+    return days <= 10 ? `بعد ${days} أيام` : `بعد ${days} يوماً`;
+}
+
+function item(b, today) {
+    const guest = String(b.guest || '').trim();
+    const nights = Math.max(1, diffDays(b.checkin, b.checkout));
+    const inDays = diffDays(today, b.checkin);
+    return {
+        guest,
+        first: guest.split(/\s+/)[0] || 'ضيف',
+        source: b.source,
+        sourceLabel: SOURCE_LABEL[b.source] || b.source || '',
+        checkin: b.checkin,
+        checkout: b.checkout,
+        nights,
+        nightsLabel: nightsWord(nights),
+        inLabel: fmtDay(b.checkin),
+        outLabel: fmtDay(b.checkout),
+        range: `${fmtDay(b.checkin)} ← ${fmtDay(b.checkout)}`,
+        nightsLeft: Math.max(0, diffDays(today, b.checkout)),
+        inDays,
+        when: b.checkin <= today && today < b.checkout ? 'مقيم الآن' : whenWord(inDays),
+    };
+}
+
+function summarize(rows) {
+    const today = riyadhToday();
+    const tomorrow = addDays(today, 1);
+    const list = rows
+        .filter((b) => b && b.checkin && b.checkout && b.status !== 'cancelled' && b.status !== 'blocked')
+        .map((b) => ({ ...b, checkin: String(b.checkin).slice(0, 10), checkout: String(b.checkout).slice(0, 10) }))
+        .sort((a, b) => (a.checkin < b.checkin ? -1 : 1));
+
+    const current = list.find((b) => b.checkin <= today && today < b.checkout) || null;
+    // «القادم» = أول وصول بعد المقيم الحالي (المقيم نفسه يُعرض في current)
+    const future = list.filter((b) => b.checkin >= today && b !== current);
+    return {
+        ok: true,
+        today,
+        todayLabel: `${fmtWeekday(today)} ${fmtDay(today)}`,
+        current: current ? item(current, today) : null,
+        next: future.length ? item(future[0], today) : null,
+        arrivalsToday: list.filter((b) => b.checkin === today).map((b) => item(b, today)),
+        departuresToday: list.filter((b) => b.checkout === today).map((b) => item(b, today)),
+        arrivalsTomorrow: list.filter((b) => b.checkin === tomorrow).map((b) => item(b, today)),
+        departuresTomorrow: list.filter((b) => b.checkout === tomorrow).map((b) => item(b, today)),
+        upcoming: list.filter((b) => b.checkout > today).slice(0, 5).map((b) => item(b, today)),
+    };
+}
+
+// نص «ملخص اليوم» — فارغ إن لم يكن هناك وصول/مغادرة اليوم أو غداً ولا مقيم
+function digestLines(s) {
+    const who = (x) => `${x.first} (${x.nightsLabel}${x.sourceLabel ? ' • ' + x.sourceLabel : ''})`;
+    const lines = [];
+    s.arrivalsToday.forEach((x) => lines.push(`🟢 وصول اليوم: ${who(x)}`));
+    s.departuresToday.forEach((x) => lines.push(`🔴 مغادرة اليوم: ${x.first} — جهّز الشقة للتنظيف`));
+    if (s.current && !s.arrivalsToday.some((x) => x.checkin === s.current.checkin)) {
+        lines.push(`🏠 مقيم الآن: ${s.current.first} حتى ${fmtDay(s.current.checkout)}`);
+    }
+    s.arrivalsTomorrow.forEach((x) => lines.push(`📅 غداً وصول: ${who(x)}`));
+    s.departuresTomorrow.forEach((x) => lines.push(`📅 غداً مغادرة: ${x.first}`));
+    return lines;
+}
+
+module.exports = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    const send = (code, obj) => res.status(code).send(JSON.stringify(obj));
+
+    if (req.method !== 'GET') return send(405, { ok: false, error: 'method not allowed' });
+
+    const q = req.query || {};
+    const token = String(q.token || '').trim();
+    if (token.length < 16) return send(401, { ok: false, error: 'token required' });
+
+    try {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/ical_bookings`, {
+            method: 'POST',
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ p_token: token }),
+        });
+        if (!r.ok) {
+            console.error('[upcoming] rpc failed', r.status, (await r.text()).slice(0, 200));
+            return send(r.status === 404 ? 503 : 403, { ok: false, error: r.status === 404 ? 'apply migration 0007' : 'invalid token' });
+        }
+        const rows = await r.json();
+        const summary = summarize(Array.isArray(rows) ? rows : []);
+
+        if (q.digest) {
+            const key = String(req.headers['x-sync-key'] || '').trim();
+            const lines = digestLines(summary);
+            if (!lines.length && q.force) lines.push('لا وصول ولا مغادرة اليوم أو غداً ✨');
+            if (lines.length && key.length >= 32 && sendToOwner) {
+                summary.digest = await sendToOwner(key, {
+                    title: `☀️ حجوزات ${summary.todayLabel}`,
+                    body: lines.join('\n'),
+                    url: '/admin#calendar',
+                    tag: 'daily-digest',
+                }).catch((e) => ({ error: e.message }));
+            } else {
+                summary.digest = { skipped: !lines.length ? 'nothing today' : 'no key' };
+            }
+        }
+        return send(200, summary);
+    } catch (e) {
+        console.error('[upcoming] error', e);
+        return send(500, { ok: false, error: 'upcoming failed' });
+    }
+};
+
+module.exports.summarize = summarize;
+module.exports.digestLines = digestLines;

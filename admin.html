@@ -391,6 +391,29 @@
                 </div>
             </div>
 
+            <!-- أداة شاشة القفل (تطبيق Scriptable) والملخص الصباحي — /api/upcoming -->
+            <div class="card" id="widget-card">
+                <div class="card-head">
+                    <h2>📱 الحجوزات على شاشة القفل</h2>
+                    <span class="tag" id="widget-state"></span>
+                </div>
+                <ol class="sub" style="font-size:12.5px;line-height:2;margin:0 0 12px;padding-inline-start:18px">
+                    <li>ثبّت تطبيق <b>Scriptable</b> المجاني من App Store.</li>
+                    <li>اضغط «نسخ سكربت الأداة» أدناه، ثم في Scriptable: زر <b>+</b> ← ألصق ← سمّه <b>RentAPA</b>.</li>
+                    <li>شاشة القفل: اضغط مطولاً ← تخصيص ← أضف أداة ← <b>Scriptable</b> ← الشكل المستطيل ← اضغطها ← اختر <b>RentAPA</b>.</li>
+                </ol>
+                <p class="sub" style="font-size:12px;line-height:1.9;margin-bottom:12px">
+                    🔒 الأداة تعرض التواريخ فقط؛ لإظهار الاسم الأول للضيف غيّر <code dir="ltr">SHOW_NAMES = true</code> في أعلى السكربت.
+                    ☀️ ويصلك ملخص الحجوزات إشعاراً كل يوم الساعة 8 صباحاً (عند وجود وصول أو مغادرة).
+                </p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="btn btn-primary btn-sm" id="btn-widget-copy" disabled>نسخ سكربت الأداة</button>
+                    <button class="btn btn-ghost btn-sm" id="btn-digest-test">إرسال ملخص اليوم الآن</button>
+                </div>
+                <textarea class="input" id="widget-script" readonly dir="ltr" hidden
+                          style="margin-top:10px;height:120px;font-family:monospace;font-size:11px"></textarea>
+            </div>
+
             <!-- الدخول بالوجه (Face ID) على هذا الجهاز -->
             <div class="card" id="bio-card">
                 <div class="card-head">

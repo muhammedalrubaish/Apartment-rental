@@ -1943,6 +1943,79 @@
         });
     }
 
+    /* ---- أداة شاشة القفل (Scriptable) والملخص الصباحي — /api/upcoming ----
+       السكربت قالب في assets/widget/ يُملأ هنا برابط الحجوزات الخاص (رمز تصدير التقويم).
+       يُجهَّز مسبقاً عند عرض البطاقة، لأن نسخ النص على iPhone يجب أن يتم داخل الضغطة نفسها. */
+    let widgetScript = '';
+
+    async function renderWidgetCard() {
+        const st = $('#widget-state');
+        if (!st) return;
+        const btn = $('#btn-widget-copy');
+        if (widgetScript) { st.className = 'tag tag-ok'; st.textContent = 'جاهز'; btn.disabled = false; return; }
+        st.className = 'tag';
+        st.textContent = 'جارٍ التجهيز…';
+        try {
+            const token = await loadIcsToken();
+            if (!token) throw new Error(icsTokenError || 'تعذّر تحميل رمز التقويم');
+            const r = await fetch('/assets/widget/rentapa-scriptable.js', { cache: 'no-store' });
+            if (!r.ok) throw new Error('تعذّر تحميل قالب السكربت');
+            const url = `${location.origin}/api/upcoming?token=${encodeURIComponent(token)}`;
+            widgetScript = (await r.text()).replace('__DATA_URL__', url);
+            st.className = 'tag tag-ok';
+            st.textContent = 'جاهز';
+            btn.disabled = false;
+        } catch (e) {
+            console.error('[widget]', e);
+            st.className = 'tag tag-warn';
+            st.textContent = e.message || 'تعذّر التجهيز';
+        }
+    }
+
+    function bindWidgetCard() {
+        const btn = $('#btn-widget-copy');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            if (!widgetScript) return;
+            const box = $('#widget-script');
+            const fallback = () => {
+                // النسخ التلقائي مرفوض: نعرض السكربت محدداً ليُنسخ يدوياً
+                box.hidden = false;
+                box.value = widgetScript;
+                box.focus();
+                box.select();
+                toast('حدّد النص الظاهر وانسخه يدوياً', true);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(widgetScript)
+                    .then(() => toast('نُسخ السكربت ✅ — ألصقه في Scriptable'))
+                    .catch(fallback);
+            } else {
+                fallback();
+            }
+        });
+
+        $('#btn-digest-test').addEventListener('click', async (ev) => {
+            const b = ev.currentTarget;
+            b.disabled = true;
+            try {
+                const [token, key] = await Promise.all([loadIcsToken(), loadSyncKey()]);
+                if (!token) throw new Error(icsTokenError || 'تعذّر تحميل رمز التقويم');
+                const r = await fetch(`/api/upcoming?digest=1&force=1&token=${encodeURIComponent(token)}`, { headers: { 'X-Sync-Key': key } });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok || !j.ok) throw new Error(`الخادم رفض الطلب (${r.status})`);
+                const dg = j.digest || {};
+                if (dg.sent) toast(`أُرسل الملخص إلى ${dg.sent} ${dg.sent === 1 ? 'جهاز' : 'أجهزة'} ✅`);
+                else if (dg.devices === 0) toast('لا توجد أجهزة مسجلة — فعّل إشعارات الجوال أولاً', true);
+                else toast(dg.error ? `تعذّر الإرسال: ${dg.error}` : 'لم يُرسل شيء', true);
+            } catch (e) {
+                toast(e.message || 'تعذّر إرسال الملخص', true);
+            } finally {
+                b.disabled = false;
+            }
+        });
+    }
+
     function bindPushCard() {
         const on = $('#btn-push-on');
         if (!on) return;
@@ -2990,6 +3063,7 @@
     function renderNotifications() {
         renderPushCard();
         renderBioCard();
+        renderWidgetCard();
         const list = state.notifications.filter((n) => notifFilter === 'all' || n.type === notifFilter);
 
         if (!list.length) {
@@ -4024,6 +4098,7 @@
         bind();
         bindPushCard();    // أزرار إشعارات الجوال
         bindBioCard();     // أزرار الدخول بالوجه
+        bindWidgetCard();  // أداة شاشة القفل والملخص الصباحي
         updateBadges();
         // اعرض الواجهة فوراً، ثم تُحدَّث تلقائياً حالما تصل البيانات من الخادم
         const hash = location.hash.replace('#', '');
