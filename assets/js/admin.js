@@ -4177,7 +4177,7 @@
         $('#cal-today').addEventListener('click', () => { calCursor = new Date(); renderCalendar(); });
         // الجوال يخفي زر «اليوم»: الضغط على اسم الشهر يعود للشهر الحالي
         $('#cal-month').addEventListener('click', () => { calCursor = new Date(); renderCalendar(); });
-        $('#cal-add').addEventListener('click', () => openBookingForm());
+        // «+ حجز» في رأس التقويم أُزيل: زر «حجز جديد» في الشريط العلوي يؤدي الغرض
         $('#btn-ics-export').addEventListener('click', () => {
             download('calendar.ics', buildICS(), 'text/calendar;charset=utf-8');
             toast('تم تصدير ملف التقويم');

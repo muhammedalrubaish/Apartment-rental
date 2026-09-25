@@ -865,15 +865,14 @@ textarea.input.compact { min-height: 0; height: 50px; }
 @media (max-width: 720px) {
     :root { --sidebar-w: 100%; }
 
-    /* رأس التقويم في سطر واحد: ‹ الشهر › ثم التصدير والاستيراد والحجز.
-       زر «اليوم» يُخفى هنا — الضغط على اسم الشهر يعود لليوم */
+    /* رأس التقويم في سطر واحد: ‹ الشهر › واليوم ثم التصدير والاستيراد.
+       الضغط على اسم الشهر يعود لليوم أيضاً (وحده على الشاشات الضيقة جداً) */
     .cal-head { gap: 5px; }
     .cal-head .icon-btn { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
     .cal-head .icon-btn svg { width: 17px; height: 17px; }
     .cal-month { font-size: 15px; min-width: 0; flex: 1 1 auto; white-space: nowrap; cursor: pointer; }
-    #cal-today { display: none; }
+    #cal-today { height: 34px; padding: 0 10px; flex-shrink: 0; }
     .cal-tools { gap: 5px; }
-    .cal-tools .btn { height: 34px; padding: 0 11px; }
 
     /* المؤشرات في سطر واحد بتسميات مختصرة وحجم يتقلص مع عرض الشاشة */
     .cal-legend { gap: min(10px, 1.6vw); font-size: min(11.5px, 2.8vw); justify-content: space-between; }
@@ -950,6 +949,10 @@ textarea.input.compact { min-height: 0; height: 50px; }
 /* شاشات اللمس: خط الحقول 16px يمنع iOS من تكبير الصفحة عند الضغط على حقل الكتابة */
 @media (pointer: coarse) {
     .input, select.input, textarea.input { font-size: 16px; }
+}
+
+@media (max-width: 360px) {
+    #cal-today { display: none; }
 }
 
 @media (max-width: 480px) {
@@ -1029,7 +1032,7 @@ textarea.input.compact { min-height: 0; height: 50px; }
     border: 1px solid var(--line, #e2e6ec);
     background: var(--surface-2, #f5f7fa);
     padding: 0 14px;
-    font-size: 15px;
+    font-size: 16px;   /* أقل من 16px يجعل iOS يكبّر الصفحة عند الكتابة فتبقى اللوحة مكبّرة بعد الدخول */
     font-weight: 700;
     text-align: center;
     letter-spacing: 3px;
