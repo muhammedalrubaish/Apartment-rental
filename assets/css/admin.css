@@ -603,6 +603,10 @@ td.dim { color: var(--text-dim); font-weight: 500; }
     background: var(--brand); color: #fff; font-size: 11px; font-weight: 800;
     display: grid; place-items: center; flex-shrink: 0;
 }
+/* تواريخ حجز صاحب المحادثة (بالرقم نفسه) تحت الاسم */
+.chat-item .stay { display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-item .stay.st-now { color: var(--ok); }
+.chat-item .stay.st-next { color: var(--brand); }
 .chat-who { margin-inline-end: auto; min-width: 0; }
 .chat-who > div { line-height: 1.45; }
 .chat-back { display: none; }
@@ -833,7 +837,8 @@ textarea.input.compact { min-height: 0; height: 50px; }
     .chat-item { padding: 14px 16px; gap: 13px; align-items: center; }
     .chat-item .av { width: 50px; height: 50px; font-size: 19px; }
     .chat-item .nm { font-size: 15px; }
-    .chat-item .pv { font-size: 13px; margin-top: 4px; }
+    .chat-item .pv { font-size: 13px; margin-top: 3px; }
+    .chat-item .stay { font-size: 12px; }
     .chat-item .tm { font-size: 11.5px; }
 
     .chat-back { display: grid; flex-shrink: 0; }

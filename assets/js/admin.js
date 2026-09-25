@@ -1628,6 +1628,32 @@
     const AV_COLORS = [['#fde7dc', '#c2410c'], ['#dcfce7', '#15803d'], ['#e0e7ff', '#4338ca'], ['#fce7f3', '#be185d'], ['#fef3c7', '#b45309'], ['#e0f2fe', '#0369a1']];
     const avColor = (name) => AV_COLORS[[...String(name || '')].reduce((h, ch) => (h * 31 + ch.codePointAt(0)) >>> 0, 7) % AV_COLORS.length];
 
+    /* حجز صاحب المحادثة بالرقم نفسه (كما يعرض Airbnb تواريخ الحجز تحت الاسم):
+       الجاري أو الأقرب قادماً، وإلا آخر حجز سابق */
+    function bookingForPhone(phone) {
+        const n = normPhone(phone);
+        if (!n) return null;
+        const today = todayISO();
+        const mine = state.bookings.filter((b) => b.status !== 'cancelled' && b.status !== 'blocked' && normPhone(b.phone) === n);
+        if (!mine.length) return null;
+        const live = mine.filter((b) => b.checkout > today).sort((a, b) => a.checkin.localeCompare(b.checkin));
+        return live[0] || mine.sort((a, b) => b.checkout.localeCompare(a.checkout))[0];
+    }
+
+    // «22–23 سبتمبر • مقيم الآن» أو «30 سبتمبر – 2 أكتوبر • قادم»
+    function stayLine(b) {
+        const loc = dateLocale();
+        const s = new Date(b.checkin + 'T00:00:00'), e = new Date(b.checkout + 'T00:00:00');
+        const day = (d) => d.toLocaleDateString(loc, { day: 'numeric' });
+        const mon = (d) => d.toLocaleDateString(loc, { month: 'long' });
+        const range = s.getMonth() === e.getMonth()
+            ? `${day(s)}–${day(e)} ${mon(s)}`
+            : `${day(s)} ${mon(s)} – ${day(e)} ${mon(e)}`;
+        const today = todayISO();
+        const st = b.checkin <= today && today < b.checkout ? 'مقيم الآن' : b.checkin > today ? 'قادم' : 'سابق';
+        return { range, st };
+    }
+
     function setThreadOpen(open) {
         msg.threadOpen = open;
         const chat = document.querySelector('#view-messages .chat');
@@ -2507,10 +2533,13 @@
                 const ch = CHANNEL_META[c.channel] || CHANNEL_META.site;
                 const [bg, fg] = avColor(c.visitor_name);
                 const active = msg.activeId === c.id && !inboxMode();
+                const bk = bookingForPhone(c.visitor_phone);
+                const stay = bk ? stayLine(bk) : null;
                 return `<button class="chat-item ${active ? 'active' : ''} ${c.unread_owner ? 'unread' : ''}" data-thread="${c.id}">
                     <span class="av" style="background:${bg};color:${fg}">${escapeHtml(c.visitor_name.charAt(0))}<span class="av-ch">${ch[0]}</span></span>
                     <span class="meta">
                         <span class="nm"><span class="nm-t">${escapeHtml(c.visitor_name)}</span><span class="tm">${c.last_at ? relTime(c.last_at) : ''}</span></span>
+                        ${stay ? `<span class="stay st-${stay.st === 'مقيم الآن' ? 'now' : stay.st === 'قادم' ? 'next' : 'past'}">${escapeHtml(stay.range)} • ${stay.st}</span>` : ''}
                         <span class="pv">${escapeHtml(c.last_message || 'لا رسائل بعد')}</span>
                     </span>
                     ${c.unread_owner ? `<span class="unread-n">${c.unread_owner}</span>` : ''}
