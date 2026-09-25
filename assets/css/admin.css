@@ -188,6 +188,9 @@ a { color: inherit; text-decoration: none; }
     line-height: 1;
 }
 
+/* display:grid أعلاه كان يُلغي خاصية hidden فيظهر «0» دائماً على أيقونة الرسائل */
+.rail-badge[hidden] { display: none; }
+
 .rail-spacer { flex: 1; }
 
 .rail-user {

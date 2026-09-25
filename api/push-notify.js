@@ -29,6 +29,8 @@ module.exports = async (req, res) => {
         }
         if (!body.title && !body.body) return send(400, { ok: false, error: 'title or body required' });
         const result = await sendToOwner(key, body);
+        // في السجل: كم جهازاً مسجلاً وكم وصله الإشعار — devices: 0 يعني أن الإشعارات لم تُفعَّل على أي جوال
+        console.log('[push-notify]', JSON.stringify({ tag: body.tag || null, ...result }));
         return send(200, { ok: true, ...result });
     } catch (e) {
         const msg = e.message || 'push failed';

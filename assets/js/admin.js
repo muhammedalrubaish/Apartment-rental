@@ -2518,6 +2518,10 @@
         renderChannels();
     }
 
+    function threadVisible() {
+        return currentView() === 'messages' && document.visibilityState !== 'hidden';
+    }
+
     async function openThread(id, keepList) {
         const c = msg.conversations.find((x) => x.id === id);
         if (!c) return;
@@ -2525,7 +2529,10 @@
         msg.activeId = id;
         $$('.chat-item').forEach((el) => el.classList.toggle('active', el.dataset.thread === id));
 
-        if (c.unread_owner) markConversationRead(id).then(renderMessages);
+        /* لا تُعلَّم المحادثة مقروءة إلا إذا كانت معروضة فعلاً: renderMessages تفتح أحدث
+           محادثة تلقائياً عند كل تحميل، فكان العدّاد يُصفَّر حتى واللوحة على صفحة أخرى
+           أو في الخلفية — فتظهر الرسائل الجديدة «0» */
+        if (c.unread_owner && threadVisible()) markConversationRead(id).then(renderMessages);
 
         const ch = CHANNEL_META[c.channel] || CHANNEL_META.site;
         $('#chat-panel').innerHTML = `
@@ -4234,6 +4241,10 @@
 
         const bookingsReady = loadBookings();   // تحميل الحجوزات الحقيقية من Supabase
         if (intent) bookingsReady.then(() => runIntent(intent[1], intent[2]));
+        // العودة للوحة وهي على صفحة الرسائل: المحادثة المعروضة تُعلَّم مقروءة الآن
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && currentView() === 'messages' && msg.loaded) renderMessages();
+        });
         // اللوحة مفتوحة أصلاً: الضغط على إشعار يغيّر الرابط فقط (#complete=…) دون إعادة تحميل
         window.addEventListener('hashchange', () => {
             const m = /^#(book|complete)(?:=(.+))?$/.exec(location.hash);
