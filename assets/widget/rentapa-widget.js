@@ -15,7 +15,7 @@ const PLATFORM_ICON = {
   gathern: "key.fill",
   whatsapp: "message.fill",
   direct: "globe",
-  manual: "pencil.circle.fill",
+  manual: "pencil",
   ical: "calendar",
 };
 
@@ -183,7 +183,7 @@ function tile(parent, o) {
   t.backgroundColor = new Color("#ffffff", o.dim ? 0.09 : 0.16);
   t.cornerRadius = 12;
   t.setPadding(4, 5, 4, 5);
-  t.size = new Size(o.width, o.height);
+  t.size = new Size(0, o.height);   // العرض مرن: البطاقات تتقاسم عرض الأداة الفعلي
 
   const head = t.addStack();
   head.addSpacer();
@@ -335,7 +335,7 @@ function eventCard(parent, e, width) {
   c.backgroundColor = new Color("#ffffff", e.ongoing ? 0.2 : 0.11);
   c.cornerRadius = 11;
   c.setPadding(5, 6, 5, 6);
-  c.size = new Size(width, 54);
+  c.size = new Size(0, 54);   // العرض مرن كي يملأ الشريط عرض الأداة
   const line = (text, font, color, icon) => {
     const r = c.addStack();
     r.layoutHorizontally();
@@ -409,7 +409,7 @@ function pill(parent, label, icon, url, width, strong) {
   p.centerAlignContent();
   p.backgroundColor = new Color("#ffffff", strong ? 0.26 : 0.16);
   p.cornerRadius = 11;
-  p.size = new Size(width, 24);
+  p.size = new Size(0, 24);   // العرض مرن كي يملأ الزرّان عرض الأداة
   p.url = url;
   const addIcon = () => {
     const im = p.addImage(sym(icon));
@@ -434,8 +434,8 @@ function actionPills(parent, inc, opts, width) {
   const r = parent.addStack();
   r.layoutHorizontally();
   const gap = 6;
-  const book = () => pill(r, "حجز سريع", "plus.circle.fill", actionUrl(opts, "book"), n ? Math.floor((width - gap) / 2) : width, true);
-  const done = () => pill(r, n === 1 ? "إكمال حجز منصة" : "إكمال " + n + " من المنصات", "exclamationmark.circle.fill",
+  const book = () => pill(r, "حجز سريع", "plus", actionUrl(opts, "book"), n ? Math.floor((width - gap) / 2) : width, true);
+  const done = () => pill(r, n === 1 ? "إكمال حجز منصة" : "إكمال " + n + " من المنصات", "square.and.pencil",
     actionUrl(opts, "complete"), Math.floor((width - gap) / 2), false);
   // الأول يظهر يميناً على جوال عربي
   if (!n) book();
@@ -482,7 +482,8 @@ function priceTiles(parent, pr, width) {
   tile(r, { width: tw, height: 40, icon: "sparkles", label: "الويكند • الليلة", value: txt(pr.weekend), valueSize: 13, sub: note(pr.weekend) });
 }
 
-// عرض المحتوى الداخلي للأداة الكبيرة بالنقاط (يختلف قليلاً بين أجهزة iPhone)
+// تقدير عرض المحتوى الداخلي للأداة الكبيرة — لأطوال أشرطة التقدم فقط؛ البطاقات نفسها مرنة العرض
+// (العرض الثابت ترك فراغاً يساراً على الجوالات الأعرض)
 function contentWidth() {
   // الأداة الكبيرة ≈ 85% من عرض الشاشة، ناقص الحواف الداخلية (14 من كل جانب)
   try { return Math.max(280, Math.min(336, Math.floor(Device.screenSize().width * 0.85 - 30))); } catch (e) { return 300; }
@@ -595,7 +596,7 @@ async function build(opts) {
       }
       billRows(w, d.bills, false);
       const cw = contentWidth();
-      w.addSpacer(8);
+      w.addSpacer();
       eventsStrip(w, d.events, cw);
       w.addSpacer();
       actionPills(w, d.incomplete, opts, cw);
@@ -638,7 +639,7 @@ async function build(opts) {
 
   // الكبيرة (مختصرة): بطاقة رئيسية بثلاثة أسطر، أسطر معلومات بلا عناوين، ثم المؤشرات والأسعار
   (d.departuresToday || []).forEach((x) => row(w, "مغادرة اليوم: " + (show ? x.first + " — " : "") + "جهّز الشقة للتنظيف",
-    { icon: "arrow.up.right.circle.fill", font: Font.boldSystemFont(12), color: WHITE }));
+    { icon: "arrow.up.right", font: Font.boldSystemFont(12), color: WHITE }));
   if ((d.departuresToday || []).length) w.addSpacer(5);
 
   heroCard(w, main, cur ? "مقيم الآن" : next.when, cur ? "house.fill" : "calendar.badge.clock", show);
@@ -660,8 +661,9 @@ async function build(opts) {
   // المناسبات في الفراغ: بطاقات إن اتسع المكان، وإلا سطر واحد
   const infoLines = (d.departuresToday || []).length + (second ? 1 : 0) + (last ? 1 : 0) + (d.bills || []).length;
   const cw = contentWidth();
-  if (infoLines <= 3) { w.addSpacer(8); eventsStrip(w, d.events, cw); }
-  else if (infoLines <= 4) eventLine(w, d.events);
+  // فراغان مرنان حول المناسبات: تتوسط المساحة الفارغة بدل الالتصاق بأعلاها
+  if (infoLines <= 3) { w.addSpacer(); eventsStrip(w, d.events, cw); }
+  else if (infoLines <= 4) { w.addSpacer(); eventLine(w, d.events); }
 
   w.addSpacer();
   actionPills(w, d.incomplete, opts, cw);
