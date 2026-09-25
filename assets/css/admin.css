@@ -640,6 +640,19 @@ select.input { cursor: pointer; }
 .toggle.on::after { inset-inline-start: calc(100% - 22px); background: #fff; }
 
 /* مجموعة أزرار */
+/* جهات الاتصال: البحث والزرّان في سطر واحد — البحث يأخذ ما تبقى من العرض */
+.contact-tools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; flex: 1 1 320px; min-width: 0; max-width: 560px; }
+.contact-tools .input { flex: 1 1 auto; min-width: 0; height: 34px; }
+.contact-tools .btn { flex: none; white-space: nowrap; }
+.contact-tools .btn[hidden] { display: none; }
+.lbl-short { display: none; }
+@media (max-width: 520px) {
+    .contact-tools { flex-basis: 100%; max-width: none; }
+    .contact-tools .btn { padding-inline: 10px; }
+    .lbl-long { display: none; }
+    .lbl-short { display: inline; }
+}
+
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 3px; gap: 3px; }
 .seg button { padding: 7px 14px; border-radius: 7px; font-size: 12.5px; font-weight: 700; color: var(--muted); transition: var(--ease); }
 .seg button:hover { color: var(--text); }

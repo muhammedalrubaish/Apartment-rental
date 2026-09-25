@@ -375,9 +375,12 @@
                         <button data-cf="guests">الزبائن</button>
                         <button data-cf="ops">التشغيل</button>
                     </div>
-                    <input class="input" id="contact-search" placeholder="بحث بالاسم أو الجوال…" style="max-width:220px;height:34px">
-                    <button class="btn btn-ghost btn-sm" id="btn-seed-ops" hidden>+ جهات التشغيل الأساسية</button>
-                    <button class="btn btn-primary btn-sm" id="btn-add-contact">+ جهة اتصال</button>
+                    <!-- البحث والزرّان في سطر واحد دائماً (على الجوال تُختصر تسميات الأزرار) -->
+                    <div class="contact-tools">
+                        <input class="input" id="contact-search" placeholder="بحث بالاسم أو الجوال…">
+                        <button class="btn btn-ghost btn-sm" id="btn-seed-ops" title="إضافة جهات التشغيل الأساسية" hidden>+ <span class="lbl-long">جهات التشغيل الأساسية</span><span class="lbl-short">الأساسية</span></button>
+                        <button class="btn btn-primary btn-sm" id="btn-add-contact" title="إضافة جهة اتصال">+ <span class="lbl-long">جهة اتصال</span><span class="lbl-short">جهة</span></button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>

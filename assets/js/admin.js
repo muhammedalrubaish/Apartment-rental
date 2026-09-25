@@ -2867,6 +2867,7 @@
             return;
         }
 
+        const btnHtml = btn ? btn.innerHTML : '';   // التسمية بصيغتيها الطويلة والمختصرة
         if (btn) { btn.disabled = true; btn.textContent = 'جارٍ الإضافة…'; }
 
         let added = 0;
@@ -2876,7 +2877,7 @@
             if (saved) { state.contacts.push(saved); added++; } else { failed++; }
         }
 
-        if (btn) { btn.disabled = false; btn.textContent = '+ جهات التشغيل الأساسية'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = btnHtml; }
 
         save();
         renderContacts();
