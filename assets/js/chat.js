@@ -389,9 +389,30 @@
     }
 
     /* ---------- الفتح والإغلاق ---------- */
+    /* تثبيت الصفحة خلف المحادثة على الجوال فقط (هي بطاقة تغطي معظم الشاشة هناك):
+       overflow:hidden وحده لا يكفي في Safari، فتُثبَّت الصفحة بموضعها ثم تعود إليه */
+    let lockedY = null;
+    function lockPage(on) {
+        const body = document.body;
+        if (on && lockedY === null && window.matchMedia('(max-width: 560px)').matches) {
+            lockedY = window.scrollY || 0;
+            document.documentElement.classList.add('chat-lock');
+            body.classList.add('chat-lock-fixed');
+            body.style.top = `-${lockedY}px`;
+        } else if (!on && lockedY !== null) {
+            const y = lockedY;
+            lockedY = null;
+            document.documentElement.classList.remove('chat-lock');
+            body.classList.remove('chat-lock-fixed');
+            body.style.top = '';
+            window.scrollTo(0, y);
+        }
+    }
+
     function open() {
         panel().classList.add('open');
         document.body.classList.add('chat-open');
+        lockPage(true);
         $('#chat-launcher').style.display = 'none';
 
         if (isLoggedIn()) {
@@ -409,6 +430,7 @@
     function close() {
         panel().classList.remove('open');
         document.body.classList.remove('chat-open');
+        lockPage(false);
         $('#chat-launcher').style.display = '';
         stopPolling();
     }

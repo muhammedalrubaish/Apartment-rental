@@ -1977,6 +1977,13 @@ html.apt3d-lock .navbar { display: none !important; }
 }
 
 .chat-panel.open { display: flex; }
+/* لا يمتد التمرير من المحادثة إلى الصفحة خلفها */
+.chat-panel { overscroll-behavior: contain; }
+
+/* الجوال: الصفحة خلف المحادثة مثبّتة بموضعها ما دامت مفتوحة (انظر lockPage في chat.js)
+   — Safari على الآيفون كان يمرّر الخلفية بدل الرسائل */
+html.chat-lock, html.chat-lock body { overflow: hidden; overscroll-behavior: none; }
+body.chat-lock-fixed { position: fixed; inset-inline: 0; width: 100%; }
 
 @keyframes chatIn { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
 
@@ -2025,7 +2032,7 @@ html.apt3d-lock .navbar { display: none !important; }
 .chat-head .ch-x svg { width: 17px; height: 17px; }
 
 /* شاشة تسجيل الدخول */
-.chat-login { padding: 22px 20px; overflow-y: auto; flex: 1; }
+.chat-login { padding: 22px 20px; overflow-y: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
 .chat-login h5 { font-size: 15px; font-weight: 800; color: var(--text-main); margin-bottom: 6px; }
 .chat-login > p { font-size: 12.5px; color: var(--text-muted); line-height: 1.75; margin-bottom: 16px; }
 
@@ -2103,7 +2110,10 @@ html.apt3d-lock .navbar { display: none !important; }
 /* مجرى الرسائل */
 .chat-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     padding: 16px;
     display: flex;
     flex-direction: column;
