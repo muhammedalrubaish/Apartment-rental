@@ -9,9 +9,10 @@
 const ADMIN_URL = "https://rentapa.vercel.app/admin";
 
 // أيقونات المنصات (رموز نظام iPhone — تُلوَّن بالأبيض على الشاشة الرئيسية)
+// (رموز الحروف a.circle/g.circle ظهرت دوائر فارغة بهذا الحجم — استُبدلت برموز واضحة)
 const PLATFORM_ICON = {
-  airbnb: "a.circle.fill",
-  gathern: "g.circle.fill",
+  airbnb: "bed.double.fill",
+  gathern: "key.fill",
   whatsapp: "message.fill",
   direct: "globe",
   manual: "pencil.circle.fill",
@@ -135,11 +136,134 @@ function billRows(parent, bills, compact) {
 }
 
 // الضيوف السابقون: «سليمان الوهبي • واتساب • خرج أمس (27 سبتمبر)»
+// «ضيف Airbnb» اسم مستورد يحمل المنصة أصلاً — لا نكرر «Airbnb» بعده
+function guestAndPlatform(x, show) {
+  const name = show ? x.guest || x.first || "" : "";
+  const dup = name && x.sourceLabel && name.indexOf(x.sourceLabel) !== -1;
+  return [name, dup ? "" : x.sourceLabel].filter(Boolean);
+}
+
 function pastRows(parent, past, show, limit) {
   (past || []).slice(0, limit).forEach((x) => {
-    row(parent, [show ? x.guest || x.first : "", x.sourceLabel, x.left + " (" + x.outLabel + ")"].filter(Boolean).join(" • "),
+    row(parent, guestAndPlatform(x, show).concat([x.left + " (" + x.outLabel + ")"]).join(" • "),
       { icon: PLATFORM_ICON[x.source] || "arrow.uturn.backward", font: Font.systemFont(11), color: SOFT });
   });
+}
+
+/* ---------- مؤشرات بصرية ---------- */
+
+// شريط تقدّم بزوايا ناعمة (صورة) — يمتلئ من اليمين على جوال عربي
+function progressBar(frac, width, height) {
+  const ctx = new DrawContext();
+  ctx.size = new Size(width, height);
+  ctx.opaque = false;
+  ctx.respectScreenScale = true;
+  const bg = new Path();
+  bg.addRoundedRect(new Rect(0, 0, width, height), height / 2, height / 2);
+  ctx.addPath(bg);
+  ctx.setFillColor(new Color("#ffffff", 0.25));
+  ctx.fillPath();
+  const f = Math.max(0, Math.min(1, frac || 0));
+  if (f > 0) {
+    const fw = Math.max(height, Math.round(width * f));
+    const fg = new Path();
+    fg.addRoundedRect(new Rect(RTL ? width - fw : 0, 0, fw, height), height / 2, height / 2);
+    ctx.addPath(fg);
+    ctx.setFillColor(Color.white());
+    ctx.fillPath();
+  }
+  return ctx.getImage();
+}
+
+// إطار ناعم: أيقونة وعنوان صغير، رقم كبير، ثم شريط أو سطر توضيح
+function tile(parent, o) {
+  const t = parent.addStack();
+  t.layoutVertically();
+  t.centerAlignContent();
+  t.backgroundColor = new Color("#ffffff", 0.16);
+  t.cornerRadius = 12;
+  t.setPadding(6, 6, 6, 6);
+  t.size = new Size(o.width, o.height);
+
+  const head = t.addStack();
+  head.addSpacer();
+  const ic = head.addImage(sym(o.icon));
+  ic.imageSize = new Size(10, 10);
+  ic.tintColor = SOFT;
+  head.addSpacer(3);
+  const hl = head.addText(o.label);
+  hl.font = Font.systemFont(9);
+  hl.textColor = SOFT;
+  hl.lineLimit = 1;
+  hl.minimumScaleFactor = 0.6;
+  head.addSpacer();
+
+  t.addSpacer(2);
+  const vs = t.addStack();
+  vs.addSpacer();
+  const v = vs.addText(o.value);
+  v.font = Font.boldRoundedSystemFont(o.valueSize || 18);
+  v.textColor = WHITE;
+  v.lineLimit = 1;
+  v.minimumScaleFactor = 0.5;
+  vs.addSpacer();
+
+  if (o.sub) {
+    const ss = t.addStack();
+    ss.addSpacer();
+    const st = ss.addText(o.sub);
+    st.font = Font.systemFont(8);
+    st.textColor = SOFT;
+    st.lineLimit = 1;
+    st.minimumScaleFactor = 0.6;
+    ss.addSpacer();
+  }
+  if (o.frac != null) {
+    t.addSpacer(3);
+    const bs = t.addStack();
+    bs.addSpacer();
+    const img = bs.addImage(progressBar(o.frac, o.width - 20, 5));
+    img.imageSize = new Size(o.width - 20, 5);
+    bs.addSpacer();
+  }
+  return t;
+}
+
+// عدّ الحجوزات بالعربية: حجز واحد، حجزان، 3–10 حجوزات، 11+ حجزاً
+const bookingsWord = (n) => (n === 0 ? "لا حجوزات" : n === 1 ? "حجز واحد" : n === 2 ? "حجزين" : n <= 10 ? n + " حجوزات" : n + " حجزاً");
+
+// ثلاثة مؤشرات للشهر جنباً إلى جنب (أول مؤشر يظهر يميناً على جوال عربي)
+function statsTiles(parent, st, width) {
+  if (!st) return;
+  const gap = 6;
+  const tw = Math.floor((width - gap * 2) / 3);
+  const r = parent.addStack();
+  r.layoutHorizontally();
+  tile(r, { width: tw, height: 62, icon: "calendar", label: "حجوزات " + st.month, value: String(st.bookings), sub: bookingsWord(st.bookings).replace(/^\d+ /, "") });
+  r.addSpacer(gap);
+  tile(r, { width: tw, height: 62, icon: "moon.fill", label: "ليالٍ محجوزة", value: st.bookedNights + "/" + st.daysInMonth, frac: st.daysInMonth ? st.bookedNights / st.daysInMonth : 0 });
+  r.addSpacer(gap);
+  tile(r, { width: tw, height: 62, icon: "calendar.badge.plus", label: "متاحة للشهر", value: String(st.freeLeft), frac: st.daysLeft ? st.freeLeft / st.daysLeft : 0 });
+}
+
+// سعر الليلة الأقل–الأعلى: وسط الأسبوع والويكند
+function priceTiles(parent, pr, width) {
+  if (!pr) return;
+  const gap = 6;
+  const tw = Math.floor((width - gap) / 2);
+  const txt = (x) => (x.min === x.max ? String(x.min) : x.min + " – " + x.max) + " ر.س";
+  const note = (x) => (x.configured ? "السعر المعتمد" : "من " + bookingsWord(x.count));
+  const r = parent.addStack();
+  r.layoutHorizontally();
+  tile(r, { width: tw, height: 50, icon: "sun.max.fill", label: "وسط الأسبوع • الليلة", value: txt(pr.weekday), valueSize: 15, sub: note(pr.weekday) });
+  r.addSpacer(gap);
+  tile(r, { width: tw, height: 50, icon: "sparkles", label: "الويكند • الليلة", value: txt(pr.weekend), valueSize: 15, sub: note(pr.weekend) });
+}
+
+// عرض المحتوى الداخلي للأداة الكبيرة بالنقاط (يختلف قليلاً بين أجهزة iPhone)
+function contentWidth() {
+  // الأداة الكبيرة ≈ 85% من عرض الشاشة، ناقص الحواف الداخلية (14 من كل جانب)
+  try { return Math.max(280, Math.min(336, Math.floor(Device.screenSize().width * 0.85 - 30))); } catch (e) { return 300; }
 }
 
 function homeBackground(w) {
@@ -208,7 +332,29 @@ async function build(opts) {
   homeBackground(w);
   w.setPadding(14, 14, 12, 14);
 
-  row(w, "RentAPA" + (d && d.stale ? " ⟳" : ""), { icon: "building.2.fill", font: Font.boldSystemFont(12), color: SOFT, iconSize: 12 });
+  {
+    const h = w.addStack();
+    h.layoutHorizontally();
+    h.centerAlignContent();
+    const addBrand = () => {
+      const im = h.addImage(sym("building.2.fill"));
+      im.imageSize = new Size(12, 12);
+      im.tintColor = SOFT;
+      h.addSpacer(4);
+      const t = h.addText("RentAPA" + (d && d.stale ? " ⟳" : ""));
+      t.font = Font.boldSystemFont(12);
+      t.textColor = SOFT;
+    };
+    const addTime = () => {
+      const tl = timeLabel();
+      if (!tl) return;
+      const t = h.addText("↻ " + tl);
+      t.font = Font.systemFont(9);
+      t.textColor = SOFT;
+    };
+    // الجوال العربي يعكس الترتيب: الأول يظهر يميناً
+    if (RTL) { addBrand(); h.addSpacer(); addTime(); } else { addTime(); h.addSpacer(); addBrand(); }
+  }
   w.addSpacer(6);
 
   if (!d) {
@@ -226,6 +372,12 @@ async function build(opts) {
         w.addSpacer(6);
       }
       billRows(w, d.bills, false);
+      w.addSpacer();
+      const cw = contentWidth();
+      statsTiles(w, d.stats, cw);
+      w.addSpacer(6);
+      priceTiles(w, d.prices, cw);
+      return w;
     } else if (family === "medium") {
       w.addSpacer();
       billRows(w, d.bills, true);
@@ -277,23 +429,22 @@ async function build(opts) {
   }
 
   // المساحة المتبقية: السابقون أكثر حين يقلّ القادم
-  const pastLimit = cur && next ? 2 : 3;
+  // المساحة محدودة: مع مؤشرات الشهر والأسعار أسفل الأداة يُكتفى بضيفين سابقين
+  const pastLimit = cur && next ? 1 : 2;
   if ((d.past || []).length) {
     row(w, "الحجوزات السابقة", { icon: "clock.arrow.circlepath", font: Font.boldSystemFont(12), color: SOFT });
     w.addSpacer(2);
     pastRows(w, d.past, show, pastLimit);
-    w.addSpacer(6);
+    w.addSpacer(5);
   }
 
-  if ((d.bills || []).length) {
-    row(w, "الاشتراكات", { icon: "doc.text.fill", font: Font.boldSystemFont(12), color: SOFT });
-    w.addSpacer(2);
-    billRows(w, d.bills, false);
-  }
+  if ((d.bills || []).length) billRows(w, d.bills, false);
 
   w.addSpacer();
-  const tl = timeLabel();
-  if (tl) row(w, "آخر تحديث " + tl, { icon: "arrow.clockwise", font: Font.systemFont(9), color: SOFT, iconSize: 9 });
+  const cw = contentWidth();
+  statsTiles(w, d.stats, cw);
+  w.addSpacer(6);
+  priceTiles(w, d.prices, cw);
   return w;
 }
 

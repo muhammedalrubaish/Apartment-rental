@@ -89,7 +89,8 @@ function summarize(rows) {
                 const ago = diffDays(b.checkout, today);
                 return Object.assign(item(b, today), {
                     ago,
-                    left: ago === 0 ? 'خرج اليوم' : ago === 1 ? 'خرج أمس' : `خرج قبل ${ago <= 10 ? ago + ' أيام' : ago + ' يوماً'}`,
+                    left: ago === 0 ? 'خرج اليوم' : ago === 1 ? 'خرج أمس' : ago === 2 ? 'خرج قبل يومين'
+                        : `خرج قبل ${ago <= 10 ? ago + ' أيام' : ago + ' يوماً'}`,
                 });
             }),
     };
@@ -132,6 +133,92 @@ function billItems(rows) {
             amount: Number(r.amount) || 0,
         };
     }).sort((a, b) => a.days - b.days);
+}
+
+/* مؤشرات الشهر الحالي (بتوقيت الرياض):
+   - bookings: عدد الحجوزات التي لها ليالٍ داخل الشهر
+   - bookedNights: الليالي المحجوزة في الشهر (دون تكرار التداخل) من أصل daysInMonth
+   - freeLeft: الليالي المتاحة من اليوم حتى نهاية الشهر (لا حجز ولا حجب) من أصل daysLeft */
+function monthStats(rows) {
+    const today = riyadhToday();
+    const monthStart = today.slice(0, 8) + '01';
+    const [y, m] = today.split('-').map(Number);
+    const monthEnd = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);   // أول الشهر التالي
+    const daysInMonth = diffDays(monthStart, monthEnd);
+    const daysLeft = diffDays(today, monthEnd);
+
+    const booked = new Set();
+    const blocked = new Set();
+    let bookings = 0;
+    rows.forEach((b) => {
+        if (!b || !b.checkin || !b.checkout || b.status === 'cancelled') return;
+        const ci = String(b.checkin).slice(0, 10), co = String(b.checkout).slice(0, 10);
+        const from = ci > monthStart ? ci : monthStart;
+        const to = co < monthEnd ? co : monthEnd;
+        if (from >= to) return;
+        const target = b.status === 'blocked' ? blocked : booked;
+        if (b.status !== 'blocked') bookings++;
+        for (let dd = from; dd < to; dd = addDays(dd, 1)) target.add(dd);
+    });
+
+    let freeLeft = 0;
+    for (let dd = today; dd < monthEnd; dd = addDays(dd, 1)) if (!booked.has(dd) && !blocked.has(dd)) freeLeft++;
+
+    return {
+        month: new Date(monthStart + 'T00:00:00Z').toLocaleDateString('ar-u-nu-latn', { month: 'long', timeZone: 'UTC' }),
+        bookings,
+        bookedNights: booked.size,
+        daysInMonth,
+        occupancy: daysInMonth ? Math.round((booked.size / daysInMonth) * 100) : 0,
+        freeLeft,
+        daysLeft,
+    };
+}
+
+/* أسعار الليلة الأقل والأعلى: وسط الأسبوع والويكند (الهجرة 0014).
+   سعر الليلة = المبلغ ÷ الليالي، ويُصنَّف الحجز ويكند إن كانت كل لياليه خميس/جمعة،
+   ووسط أسبوع إن لم يكن فيها ويكند؛ الحجز المختلط لا يُفصل بدقة فيُستبعد.
+   بلا بيانات كافية تُعرض الأسعار المعتمدة في apartments.json. */
+const WEEKEND_NIGHTS = [4, 5];   // الخميس والجمعة (getUTCDay)
+const CONFIGURED = { weekday: 220, weekend: 280 };
+
+function priceRanges(rows) {
+    const groups = { weekday: [], weekend: [] };
+    rows.forEach((b) => {
+        const ci = String(b.checkin).slice(0, 10), co = String(b.checkout).slice(0, 10);
+        const nights = diffDays(ci, co);
+        const total = Number(b.total) || 0;
+        if (nights <= 0 || total <= 0) return;
+        let we = 0;
+        for (let dd = ci; dd < co; dd = addDays(dd, 1)) {
+            if (WEEKEND_NIGHTS.indexOf(new Date(dd + 'T00:00:00Z').getUTCDay()) !== -1) we++;
+        }
+        const nightly = Math.round(total / nights);
+        if (we === nights) groups.weekend.push(nightly);
+        else if (we === 0) groups.weekday.push(nightly);
+    });
+    const range = (arr, fallback) => (arr.length
+        ? { min: Math.min(...arr), max: Math.max(...arr), count: arr.length, configured: false }
+        : { min: fallback, max: fallback, count: 0, configured: true });
+    return { weekday: range(groups.weekday, CONFIGURED.weekday), weekend: range(groups.weekend, CONFIGURED.weekend) };
+}
+
+async function loadPrices(token) {
+    try {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/widget_prices`, {
+            method: 'POST',
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ p_token: token }),
+        });
+        const rows = r.ok ? await r.json() : [];
+        return priceRanges(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+        return priceRanges([]);
+    }
 }
 
 async function loadBills(token) {
@@ -198,7 +285,8 @@ module.exports = async (req, res) => {
         }
         const rows = await r.json();
         const summary = summarize(Array.isArray(rows) ? rows : []);
-        summary.bills = await loadBills(token);
+        summary.stats = monthStats(Array.isArray(rows) ? rows : []);
+        [summary.bills, summary.prices] = await Promise.all([loadBills(token), loadPrices(token)]);
 
         if (q.digest) {
             const key = String(req.headers['x-sync-key'] || '').trim();
@@ -225,3 +313,5 @@ module.exports = async (req, res) => {
 module.exports.summarize = summarize;
 module.exports.digestLines = digestLines;
 module.exports.billItems = billItems;
+module.exports.monthStats = monthStats;
+module.exports.priceRanges = priceRanges;
