@@ -285,6 +285,14 @@ a { color: inherit; text-decoration: none; }
     border: 1.5px solid var(--surface-2);
 }
 
+/* خاصية hidden تُخفي العنصر دائماً — display في .btn و.rail-badge وغيرها كان يُلغيها،
+   فتظهر أزرار يُفترض أنها مخفية (مثل «تفعيل» والإشعارات مفعّلة أصلاً) */
+[hidden] { display: none !important; }
+
+/* أزرار بطاقة الإشعارات في سطر واحد؛ على الجوال تُختصر التسميات */
+.push-actions { display: flex; gap: 8px; flex-wrap: nowrap; }
+.push-actions .btn { flex: 1 1 0; min-width: 0; white-space: nowrap; padding-inline: 10px; }
+
 .btn {
     height: 38px;
     padding: 0 16px;
