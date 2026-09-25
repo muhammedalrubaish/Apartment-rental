@@ -505,9 +505,59 @@ function timeLabel() {
   }
 }
 
+/* صفحتان في «مجموعة ذكية» (Smart Stack): أداتان كبيرتان فوق بعض يُمرَّر بينهما عمودياً.
+   رقم الصفحة من خانة «Parameter» عند تعديل الأداة:
+     1 → اليوم: المقيم، التالي، الحجوزات القادمة، الفواتير، الحجز السريع
+     2 → الأرقام: مناسبات الرياض، مؤشرات الشهر، الأسعار
+     فارغ → التصميم المجمّع كما كان */
+function pageOf(opts) {
+  let p = opts && opts.PAGE;
+  try { if (!p && typeof args !== "undefined" && args) p = args.widgetParameter; } catch (e) { /* بلا معامل */ }
+  p = String(p || "").trim();
+  return /^(1|١|اليوم)$/.test(p) ? "1" : /^(2|٢|الأرقام)$/.test(p) ? "2" : "";
+}
+
+// الحجوزات القادمة بعد المعروضة أعلى الصفحة: «بعد 5 أيام: خالد • مباشر • 1 أكتوبر ← 3 أكتوبر»
+function upcomingRows(parent, d, skip, show, limit) {
+  const key = (x) => x && x.checkin + "|" + x.checkout;
+  const seen = skip.map(key);
+  const list = (d.upcoming || []).filter((x) => seen.indexOf(key(x)) === -1 && x.when !== "مقيم الآن").slice(0, limit);
+  if (!list.length) return 0;
+  row(parent, "القادمة", { icon: "calendar", font: Font.boldSystemFont(11), color: WHITE });
+  parent.addSpacer(2);
+  list.forEach((x) => row(parent, x.when + ": " + guestAndPlatform(x, show).concat([x.range]).join(" • "),
+    { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(11), color: SOFT }));
+  return list.length;
+}
+
+// الصفحة 2: المناسبات قائمةً في بطاقة، ثم مؤشرات الشهر والأسعار
+function numbersPage(w, d) {
+  const cw = contentWidth();
+  const ev = (d.events || []).slice(0, 6);
+  if (ev.length) {
+    const c = w.addStack();
+    c.layoutVertically();
+    c.backgroundColor = new Color("#ffffff", 0.14);
+    c.cornerRadius = 12;
+    c.setPadding(7, 10, 7, 10);
+    row(c, "مناسبات الرياض القادمة", { icon: "sparkles", font: Font.boldSystemFont(12), color: WHITE });
+    c.addSpacer(4);
+    ev.forEach((e, i) => {
+      if (i) c.addSpacer(3);
+      splitRow(c, e.name + " • " + e.label, [e.when, e.avail].filter(Boolean).join(" • "),
+        { icon: e.icon, iconSize: 11, font: e.major ? Font.boldSystemFont(12) : Font.systemFont(12) });
+    });
+  }
+  w.addSpacer();
+  compareTiles(w, d.stats, d.prevStats, cw);
+  w.addSpacer(6);
+  slimPrices(w, d.prices, cw);
+}
+
 async function build(opts) {
   const show = opts.SHOW_NAMES !== false;
   const family = opts.family || "large";
+  const page = family === "large" ? pageOf(opts) : "";
   const d = await load(opts.DATA_URL);
   const w = new ListWidget();
   w.url = ADMIN_URL;
@@ -565,7 +615,7 @@ async function build(opts) {
       im.imageSize = new Size(12, 12);
       im.tintColor = SOFT;
       h.addSpacer(4);
-      const t = h.addText("RentAPA" + (d && d.stale ? " ⟳" : ""));
+      const t = h.addText("RentAPA" + (page === "1" ? " • اليوم" : page === "2" ? " • الأرقام" : "") + (d && d.stale ? " ⟳" : ""));
       t.font = Font.boldSystemFont(12);
       t.textColor = SOFT;
     };
@@ -586,8 +636,22 @@ async function build(opts) {
     w.addSpacer();
     return w;
   }
+  if (page === "2") { numbersPage(w, d); return w; }
   if (!main) {
     row(w, "لا حجوزات قادمة", { icon: "calendar.badge.checkmark", font: Font.boldSystemFont(15), color: WHITE, iconSize: 15 });
+    if (family === "large" && page === "1") {
+      // الصفحة 1 بلا مقيم ولا قادم: السابقون والفواتير والحجز السريع
+      w.addSpacer(8);
+      if ((d.past || []).length) {
+        row(w, "الحجوزات السابقة", { icon: "clock.arrow.circlepath", font: Font.boldSystemFont(12), color: SOFT });
+        pastRows(w, d.past, show, 3);
+        w.addSpacer(6);
+      }
+      billRows(w, d.bills, false);
+      w.addSpacer();
+      actionPills(w, d.incomplete, opts, contentWidth());
+      return w;
+    }
     if (family === "large") {
       w.addSpacer(8);
       if ((d.past || []).length) {
@@ -658,6 +722,15 @@ async function build(opts) {
       { icon: "clock.arrow.circlepath", font: Font.systemFont(11), color: SOFT });
   }
   billRows(w, d.bills, true);
+
+  if (page === "1") {
+    // الصفحة 1: الحجوزات القادمة في الفراغ بدل المؤشرات (هي في الصفحة 2)
+    w.addSpacer(8);
+    upcomingRows(w, d, [main, second], show, 4);
+    w.addSpacer();
+    actionPills(w, d.incomplete, opts, contentWidth());
+    return w;
+  }
 
   // المناسبات في الفراغ: بطاقات إن اتسع المكان، وإلا سطر واحد
   const infoLines = (d.departuresToday || []).length + (second ? 1 : 0) + (last ? 1 : 0) + (d.bills || []).length;

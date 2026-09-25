@@ -81,7 +81,8 @@ function summarize(rows) {
         departuresToday: list.filter((b) => b.checkout === today).map((b) => item(b, today)),
         arrivalsTomorrow: list.filter((b) => b.checkin === tomorrow).map((b) => item(b, today)),
         departuresTomorrow: list.filter((b) => b.checkout === tomorrow).map((b) => item(b, today)),
-        upcoming: list.filter((b) => b.checkout > today).slice(0, 5).map((b) => item(b, today)),
+        // 8 تكفي الصفحة 1 في الأداة: المقيم + التالي + أربعة قادمة
+        upcoming: list.filter((b) => b.checkout > today).slice(0, 8).map((b) => item(b, today)),
         // آخر ثلاثة ضيوف غادروا (الأحدث أولاً) مع متى خرج كل منهم
         past: list.filter((b) => b.checkout <= today)
             .sort((a, b) => (a.checkout < b.checkout ? 1 : -1))
@@ -324,7 +325,8 @@ module.exports = async (req, res) => {
         summary.prices = priced.ranges;
         summary.incomplete = incompleteSummary(Array.isArray(rows) ? rows : [], priced.paid);
         // مناسبات الرياض القادمة مع توفر الشقة فيها — خطأ فيها لا يُسقط الأداة
-        try { summary.events = upcomingEvents(riyadhToday(), Array.isArray(rows) ? rows : [], 3); } catch (e) { summary.events = []; }
+        // 6: ثلاث بطاقات في التصميم المجمّع، وقائمة من ست في الصفحة 2
+        try { summary.events = upcomingEvents(riyadhToday(), Array.isArray(rows) ? rows : [], 6); } catch (e) { summary.events = []; }
 
         if (q.digest) {
             const key = String(req.headers['x-sync-key'] || '').trim();
