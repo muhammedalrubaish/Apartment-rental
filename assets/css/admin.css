@@ -456,6 +456,8 @@ td.dim { color: var(--text-dim); font-weight: 500; }
 .cal-month { font-size: 17px; font-weight: 800; min-width: 150px; text-align: center; }
 .cal-tools { margin-inline-start: auto; display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .cal-legend b { font-weight: inherit; }
+.src-inline { display: none; }
+@media (max-width: 720px) { .src-inline { display: inline; } }
 /* التقويم محصور بعرض مريح ومتوسّط داخل البطاقة بدل التمدد على كامل الشاشة.
    --cal-gap يُستخدم أيضاً في حساب امتداد شريط الحجز بين الخلايا. */
 .cal-grid {
@@ -873,6 +875,29 @@ textarea.input.compact { min-height: 0; height: 50px; }
     .cal-month { font-size: 15px; min-width: 0; flex: 1 1 auto; white-space: nowrap; cursor: pointer; }
     #cal-today { height: 34px; padding: 0 10px; flex-shrink: 0; }
     .cal-tools { gap: 5px; }
+
+    /* حجوزات الشهر: كل حجز بطاقة بلا تمرير جانبي — الاسم والحالة، ثم التواريخ
+       والمصدر، ثم الإجمالي والعمولة والواصل في ثلاثة أعمدة */
+    .month-table, .month-table tbody, .month-table tfoot { display: block; width: 100%; min-width: 0; }
+    .month-table thead { display: none; }
+    .month-table tr {
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-areas: "guest guest status" "total fee net";
+        gap: 8px 10px; padding: 12px 4px; border-bottom: 1px solid var(--line-soft);
+    }
+    .month-table tfoot tr { grid-template-areas: "guest guest guest" "total fee net"; border-radius: 12px; padding: 12px 10px; border: 0; margin-top: 8px; }
+    .month-table td { display: block; padding: 0; border: 0; min-width: 0; text-align: start; }
+    .month-table .c-guest { grid-area: guest; font-weight: 700; }
+    .month-table .c-src { display: none; }
+    .month-table .c-status { grid-area: status; justify-self: end; align-self: start; }
+    .month-table .c-total { grid-area: total; }
+    .month-table .c-fee { grid-area: fee; }
+    .month-table .c-net { grid-area: net; }
+    .month-table td[data-label]::before {
+        content: attr(data-label); display: block; font-size: 10.5px; font-weight: 600;
+        color: var(--muted); margin-bottom: 2px;
+    }
+    .month-table td.num { font-size: 13px; white-space: nowrap; }
 
     /* المؤشرات في سطر واحد بتسميات مختصرة وحجم يتقلص مع عرض الشاشة */
     .cal-legend { gap: min(10px, 1.6vw); font-size: min(11.5px, 2.8vw); justify-content: space-between; }

@@ -272,6 +272,13 @@
         return `${v} ${cur}`;
     }
 
+    // «26 أغسطس» بلا سنة إن كانت السنة الحالية — لسطر تواريخ أقصر (بطاقات الجوال)
+    function fmtDateNoYear(dstr) {
+        if (!dstr) return '—';
+        if (dstr.slice(0, 4) !== String(new Date().getFullYear())) return fmtDate(dstr);
+        return new Date(dstr + 'T00:00:00').toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' });
+    }
+
     function fmtDate(dstr) {
         if (!dstr) return '—';
         const d = new Date(dstr + 'T00:00:00');
@@ -1194,34 +1201,35 @@
             const tag = STATUS_TAG[b.status] || ['tag-mute', b.status];
             const fee = bookingCommissionAmount(b);
             const total = Number(b.total) || 0;
+            // على الجوال يصبح كل صف بطاقة (انظر .month-table في CSS): data-label عناوين الأرقام
             return `<tr data-open-booking="${b.id}" style="cursor:pointer" title="اضغط لعرض التفاصيل والتعديل">
-                <td>
+                <td class="c-guest">
                     ${b.status === 'blocked' ? '🚧' : '🛏️'} ${escapeHtml(b.guest)}
-                    <br><span style="font-size:10.5px;color:var(--muted);font-weight:600">${fmtDate(b.checkin)} ← ${fmtDate(b.checkout)} • ${nightsBetween(b.checkin, b.checkout)} ليالٍ</span>
+                    <br><span style="font-size:10.5px;color:var(--muted);font-weight:600">${fmtDateNoYear(b.checkin)} ← ${fmtDateNoYear(b.checkout)} • ${nightsBetween(b.checkin, b.checkout)} ليالٍ<span class="src-inline"> • ${SOURCE_LABEL[b.source] || b.source}</span></span>
                 </td>
-                <td class="dim">${SOURCE_LABEL[b.source] || b.source}</td>
-                <td class="num">${total ? money(total) : '—'}</td>
-                <td class="num dim">${fee ? '−' + money(fee) : '—'}</td>
-                <td class="num" style="font-weight:800">${total ? money(total - fee) : '—'}</td>
-                <td><span class="tag ${tag[0]}">${tag[1]}</span></td>
+                <td class="dim c-src">${SOURCE_LABEL[b.source] || b.source}</td>
+                <td class="num c-total" data-label="الإجمالي">${total ? money(total) : '—'}</td>
+                <td class="num dim c-fee" data-label="العمولة">${fee ? '−' + money(fee) : '—'}</td>
+                <td class="num c-net" data-label="الواصل لي" style="font-weight:800">${total ? money(total - fee) : '—'}</td>
+                <td class="c-status"><span class="tag ${tag[0]}">${tag[1]}</span></td>
             </tr>`;
         }).join('');
 
         $('#cal-month-list').innerHTML = `
             <div class="table-wrap" style="margin-bottom:0">
-                <table>
+                <table class="month-table">
                     <thead><tr>
                         <th>الضيف</th><th>المصدر</th><th>المبلغ الإجمالي</th>
                         <th>عمولة المنصة</th><th>الإيراد الواصل لي</th><th>حالة الحجز</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
                     <tfoot><tr style="font-weight:800;background:var(--surface-2)">
-                        <td>الإجمالي</td>
-                        <td class="dim">${real.length} حجز</td>
-                        <td class="num">${money(gross)}</td>
-                        <td class="num dim">${fees ? '−' + money(fees) : '—'}</td>
-                        <td class="num" style="color:var(--ok)">${money(gross - fees)}</td>
-                        <td></td>
+                        <td class="c-guest">الإجمالي<span class="src-inline"> • ${real.length} حجز</span></td>
+                        <td class="dim c-src">${real.length} حجز</td>
+                        <td class="num c-total" data-label="الإجمالي">${money(gross)}</td>
+                        <td class="num dim c-fee" data-label="العمولة">${fees ? '−' + money(fees) : '—'}</td>
+                        <td class="num c-net" data-label="الواصل لي" style="color:var(--ok)">${money(gross - fees)}</td>
+                        <td class="c-status"></td>
                     </tr></tfoot>
                 </table>
             </div>`;
