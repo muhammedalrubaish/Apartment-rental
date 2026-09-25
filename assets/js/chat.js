@@ -332,7 +332,17 @@
         renderMessages();
 
         try {
-            await sendVisitorMessage(text);
+            try {
+                await sendVisitorMessage(text);
+            } catch (err) {
+                /* 23503: المحادثة المحفوظة في المتصفح حذفها المالك من القاعدة — تُنشأ
+                   محادثة جديدة بالاسم والجوال نفسيهما وتُعاد المحاولة مرة واحدة */
+                if (!err || err.code !== '23503') throw err;
+                state.conversationId = await createConversation(state.name, state.phone);
+                save();
+                dbMessages = [];
+                await sendVisitorMessage(text);
+            }
             markForwardLink(text);
             await pollOnce();   // يجلب الرسالة من القاعدة ويزيل نسختها المؤقتة
         } catch (err) {
