@@ -1,3 +1,6 @@
+// Variables used by Scriptable.
+// These must be at the very top of the file. Do not edit.
+// icon-color: orange; icon-glyph: home;
 // RentAPA — الحجوزات القادمة على شاشة القفل والشاشة الرئيسية (تطبيق Scriptable)
 //
 // التثبيت:
@@ -38,34 +41,60 @@ async function load() {
 
 const who = (x) => (SHOW_NAMES && x.first ? x.first + " • " : "");
 
+// كل حالة: أيقونة نظام iPhone (SF Symbol) + ثلاثة أسطر
 function lines(d) {
-  if (!d) return ["RentAPA", "تعذّر التحديث", ""];
+  if (!d) return ["exclamationmark.triangle.fill", "RentAPA", "تعذّر التحديث", ""];
   if (d.current) {
     const next = d.next && d.next.checkin !== d.current.checkin ? "التالي " + d.next.when + ": " + d.next.inLabel : "";
-    return ["🏠 مقيم الآن", who(d.current) + "المغادرة " + d.current.outLabel, next];
+    return ["house.fill", "مقيم الآن", who(d.current) + "المغادرة " + d.current.outLabel, next];
   }
   if (d.next) {
-    return ["📅 الحجز القادم " + d.next.when, who(d.next) + d.next.range,
+    return ["calendar.badge.clock", "الحجز القادم " + d.next.when, who(d.next) + d.next.range,
       d.next.nightsLabel + (d.next.sourceLabel ? " • " + d.next.sourceLabel : "")];
   }
-  return ["RentAPA", "لا حجوزات قادمة", ""];
+  return ["calendar.badge.checkmark", "RentAPA", "لا حجوزات قادمة", ""];
 }
 
+// النص محاذى لليمين (عربي)
 function text(stack, value, font, opacity) {
   if (!value) return;
   const t = stack.addText(value);
   t.font = font;
   t.lineLimit = 1;
   t.minimumScaleFactor = 0.6;
+  t.rightAlignText();
   if (opacity) t.textOpacity = opacity;
   return t;
+}
+
+function symbol(name) {
+  const sf = SFSymbol.named(name) || SFSymbol.named("house.fill");
+  return sf.image;
+}
+
+// سطر العنوان: النص ثم الأيقونة على يمينه — ترتيب عربي من اليمين لليسار
+function header(w, icon, title, size, color) {
+  const row = w.addStack();
+  row.layoutHorizontally();
+  row.centerAlignContent();
+  row.addSpacer();
+  const t = row.addText(title);
+  t.font = Font.boldSystemFont(size);
+  t.lineLimit = 1;
+  t.minimumScaleFactor = 0.6;
+  if (color) t.textColor = color;
+  row.addSpacer(4);
+  const img = row.addImage(symbol(icon));
+  img.imageSize = new Size(size + 1, size + 1);
+  if (color) img.tintColor = color;
+  return row;
 }
 
 async function build(d, family) {
   const w = new ListWidget();
   w.url = ADMIN_URL;
   w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
-  const [l1, l2, l3] = lines(d);
+  const [icon, l1, l2, l3] = lines(d);
 
   if (family === "accessoryInline") {
     // سطر واحد فوق الساعة
@@ -82,13 +111,18 @@ async function build(d, family) {
     w.addAccessoryWidgetBackground = true;
     const big = !d ? "!" : d.current ? String(d.current.nightsLeft) : d.next ? (d.next.inDays <= 0 ? "0" : String(d.next.inDays)) : "—";
     const small = !d ? "RentAPA" : d.current ? "ليلة باقية" : d.next ? (d.next.inDays <= 0 ? "وصول اليوم" : "يوم للوصول") : "لا حجز";
-    const a = text(w, big, Font.boldRoundedSystemFont(20)); if (a) a.centerAlignText();
-    const b = text(w, small, Font.systemFont(9)); if (b) b.centerAlignText();
+    const top = w.addStack();
+    top.addSpacer();
+    const ic = top.addImage(symbol(icon));
+    ic.imageSize = new Size(12, 12);
+    top.addSpacer();
+    const a = text(w, big, Font.boldRoundedSystemFont(18)); if (a) a.centerAlignText();
+    const b = text(w, small, Font.systemFont(8)); if (b) b.centerAlignText();
     return w;
   }
 
   if (family === "accessoryRectangular") {
-    text(w, l1, Font.boldSystemFont(13));
+    header(w, icon, l1, 13);
     text(w, l2, Font.systemFont(12));
     text(w, l3 + (d && d.stale ? " ⟳" : ""), Font.systemFont(11), 0.8);
     return w;
@@ -102,9 +136,9 @@ async function build(d, family) {
   w.setPadding(12, 14, 12, 14);
   const white = (t) => { if (t) t.textColor = Color.white(); };
 
-  white(text(w, "RentAPA" + (d && d.stale ? " ⟳" : ""), Font.boldSystemFont(12), 0.85));
+  header(w, "building.2.fill", "RentAPA" + (d && d.stale ? " ⟳" : ""), 12, new Color("#ffffff", 0.85));
   w.addSpacer(4);
-  white(text(w, l1, Font.boldSystemFont(15)));
+  header(w, icon, l1, 15, Color.white());
   white(text(w, l2, Font.systemFont(13)));
   white(text(w, l3, Font.systemFont(12), 0.85));
 
