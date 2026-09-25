@@ -152,8 +152,11 @@
        1. أدوات مساعدة
        --------------------------------------------------------------------- */
     const uid = () => Math.random().toString(36).slice(2, 10);
-    const todayISO = () => new Date().toISOString().slice(0, 10);
-    const iso = (d) => d.toISOString().slice(0, 10);
+    /* تاريخ ISO بالتوقيت المحلي. toISOString() يحوّل إلى UTC، والرياض UTC+3:
+       منتصف ليل 17 سبتمبر محلياً = 16 سبتمبر 21:00 UTC، فكانت خلايا التقويم
+       وشرائط الحجوزات وaddDays تنزاح يوماً للخلف */
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const todayISO = () => iso(new Date());
 
     function addDays(dateStr, n) {
         const d = new Date(dateStr + 'T00:00:00');
