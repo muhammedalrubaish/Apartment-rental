@@ -27,6 +27,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const bookedReady = loadBookedRanges();
 
+    /* الأسعار من القاعدة (الهجرة 0016) — يعدّلها المالك من أداة الجوال:
+       سعر وسط الأسبوع والويكند، وأسعار خاصة لليالي المناسبات.
+       عند أي خطأ تبقى أسعار apartments.json كما هي */
+    async function loadPricing() {
+        try {
+            const r = await fetch(`${SB_URL}/rest/v1/rpc/public_pricing`, {
+                method: 'POST',
+                headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const p = await r.json();
+            return p && Number(p.weekday) > 0 && Number(p.weekend) > 0 ? p : null;
+        } catch (e) {
+            console.warn('تعذّر جلب الأسعار — تُستخدم أسعار الملف:', e);
+            return null;
+        }
+    }
+    const pricingReady = loadPricing();
+
     // 1. Fetch apartments.json data
     let apartmentData = null;
     try {
@@ -43,8 +63,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           weekend_nights بأرقام getDay (4 = الخميس، 5 = الجمعة).
           السعر يظهر بعد اختيار اليوم، ولا تُملأ تواريخ افتراضية. */
     const pricing = apartmentData.pricing || {};
-    const WEEKDAY = Number(pricing.weekday_price) || Number(pricing.price_per_night) || 220;
-    const WEEKEND = Number(pricing.weekend_price) || WEEKDAY;
+    let WEEKDAY = Number(pricing.weekday_price) || Number(pricing.price_per_night) || 220;
+    let WEEKEND = Number(pricing.weekend_price) || WEEKDAY;
+    let OVERRIDES = [];   // [{from, to, price, label}] — ليلة كل يوم من from إلى to شاملاً
     const WEEKEND_NIGHTS = Array.isArray(pricing.weekend_nights) ? pricing.weekend_nights : [4, 5];
     const LOCALE = 'ar-u-ca-gregory-nu-latn';
 
@@ -92,6 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const parts = [];
             if (d.weekdayN) parts.push(`${d.weekdayN} × ${WEEKDAY} وسط الأسبوع`);
             if (d.weekendN) parts.push(`${d.weekendN} × ${WEEKEND} ويكند`);
+            (d.events || []).forEach((e) => parts.push(`${e.n} × ${e.price} ${e.label || 'سعر خاص'}`));
             if (parts.length) lines.push(`      ▫️ ${parts.join(' + ')}`);
         }
         if (note) lines.push('', `📝 *ملاحظات:* ${note}`);
@@ -107,7 +129,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const parse = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
     const toIso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
     const addDays = (s, n) => { const dt = parse(s); dt.setDate(dt.getDate() + n); return toIso(dt); };
-    const nightPrice = (dt) => (WEEKEND_NIGHTS.indexOf(dt.getDay()) !== -1 ? WEEKEND : WEEKDAY);
+    // اسم المناسبة يأتي من القاعدة — يُهرَّب قبل إدراجه في HTML
+    const escapeText = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // سعر خاص يغطي هذه الليلة (أعلى سعر إن تداخل أكثر من واحد)، وإلا null
+    const overrideFor = (dt) => {
+        const iso = toIso(dt);
+        return OVERRIDES.filter((o) => o.from <= iso && iso <= o.to)
+            .sort((a, b) => b.price - a.price)[0] || null;
+    };
+    const nightPrice = (dt) => {
+        const o = overrideFor(dt);
+        if (o) return Number(o.price);
+        return WEEKEND_NIGHTS.indexOf(dt.getDay()) !== -1 ? WEEKEND : WEEKDAY;
+    };
     const isWeekend = (dt) => WEEKEND_NIGHTS.indexOf(dt.getDay()) !== -1;
     const fmt = (s) => parse(s).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long' });
     const dayName = (s) => parse(s).toLocaleDateString(LOCALE, { weekday: 'long' });
@@ -195,11 +230,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // سعر كل ليلة من ليلة الوصول حتى الليلة السابقة للمغادرة
         let weekdayN = 0, weekendN = 0, total = 0;
+        const events = [];   // ليالي الأسعار الخاصة مجمّعة حسب المناسبة
         for (let d = parse(ci); toIso(d) < co; d.setDate(d.getDate() + 1)) {
             total += nightPrice(d);
-            if (isWeekend(d)) weekendN++; else weekdayN++;
+            const o = overrideFor(d);
+            if (o) {
+                const g = events.find((e) => e.key === o.from + o.to);
+                if (g) g.n++; else events.push({ key: o.from + o.to, n: 1, price: Number(o.price), label: o.label });
+            } else if (isWeekend(d)) weekendN++; else weekdayN++;
         }
-        const nights = weekdayN + weekendN;
+        const nights = weekdayN + weekendN + events.reduce((s, e) => s + e.n, 0);
 
         if (nights === 1) {
             priceVal.textContent = total;
@@ -215,10 +255,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         breakdownEl.innerHTML = [
             weekdayN ? `<div class="calc-row calc-sub"><span>${weekdayN} × وسط الأسبوع</span><span>${weekdayN * WEEKDAY} ريال</span></div>` : '',
             weekendN ? `<div class="calc-row calc-sub"><span>${weekendN} × ويكند</span><span>${weekendN * WEEKEND} ريال</span></div>` : '',
+            ...events.map((e) => `<div class="calc-row calc-sub"><span>${e.n} × ${escapeText(e.label || 'سعر خاص')}</span><span>${e.n * e.price} ريال</span></div>`),
         ].join('');
         totalAmountEl.textContent = `${total} ريال`;
 
-        setWaLink({ ci, co, nights, guests, total, weekdayN, weekendN });
+        setWaLink({ ci, co, nights, guests, total, weekdayN, weekendN, events });
     }
 
     // اختيار يوم الوصول يكفي لحجز ليلة واحدة: المغادرة تُضبط تلقائياً لليوم التالي
@@ -243,6 +284,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     calculateBooking();
     bookedReady.then(calculateBooking);
+    pricingReady.then((p) => {
+        if (!p) return;
+        WEEKDAY = Number(p.weekday);
+        WEEKEND = Number(p.weekend);
+        OVERRIDES = (Array.isArray(p.overrides) ? p.overrides : [])
+            .filter((o) => o && o.from && o.to && Number(o.price) > 0);
+        if (priceHint) priceHint.textContent = `ليلتا الخميس والجمعة ${WEEKEND} ريال • اختر تاريخ الوصول لعرض السعر`;
+        calculateBooking();
+    });
 });
 
 /* ============================================================

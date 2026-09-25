@@ -313,30 +313,47 @@ function compareTiles(parent, st, prev, width) {
 }
 
 // أسعار الليلة بإطارين نحيفين؛ المصدر في العنوان (مباشر/معتمد)
-function slimPrices(parent, pr, width) {
-  if (!pr) return;
+/* القيمة الكبيرة = سعر الموقع الحالي (ما يدفعه الضيف)، والعنوان = المحقق فعلاً من
+   حجوزاتك المباشرة (الأقل–الأعلى). الضغط يفتح تعديل السعر (بمفتاح الأداة) */
+function slimPrices(parent, pr, width, opts, site) {
+  if (!pr && !site) return;
   const gap = 6;
   const tw = Math.floor((width - gap) / 2);
-  const txt = (x) => (x.min === x.max ? String(x.min) : x.min + " – " + x.max) + " ر.س";
-  const src = (x) => (x.configured ? "معتمد" : "مباشر");
+  const range = (x) => (x.min === x.max ? String(x.min) : x.min + "–" + x.max);
+  const edit = hasWriteKey(opts);
+  const one = (k, name, icon) => {
+    const x = pr && pr[k];
+    const realized = x && !x.configured ? " • حجوزاتك " + range(x) : " • سعر الموقع";
+    const value = site ? site[k] + " ر.س" : x ? range(x) + " ر.س" : "—";
+    return { width: tw, height: 36, icon, label: name + realized + (edit ? " ✎" : ""), value, valueSize: 13 };
+  };
   const r = parent.addStack();
   r.layoutHorizontally();
-  tile(r, { width: tw, height: 36, icon: "sun.max.fill", label: "وسط الأسبوع • " + src(pr.weekday), value: txt(pr.weekday), valueSize: 13 });
+  if (edit) r.url = actionUrl(opts, "prices");
+  tile(r, one("weekday", "وسط الأسبوع", "sun.max.fill"));
   r.addSpacer(gap);
-  tile(r, { width: tw, height: 36, icon: "sparkles", label: "الويكند • " + src(pr.weekend), value: txt(pr.weekend), valueSize: 13 });
+  tile(r, one("weekend", "الويكند", "sparkles"));
 }
 
 /* مناسبات الرياض القادمة (يوم التأسيس، الأعياد، كأس آسيا، موسم الرياض…) بطاقات
    صغيرة متجاورة كتقويم مصغّر: الاسم، التاريخ، ثم العدّ التنازلي وتوفر الشقة فيها.
    تُحسب في الخادم (api/_events.js) — الأداة تعرض فقط. */
-function eventCard(parent, e, width) {
+// رابط تسعير المناسبة (بمفتاح الأداة): سعر خاص لكل لياليها — المواعيد غير المعلنة تُستثنى
+function eventUrl(opts, e) {
+  if (!hasWriteKey(opts) || e.approx === true || !e.start || !e.end) return null;
+  return actionUrl(opts, "event") + "&from=" + e.start + "&to=" + e.end + "&name=" + encodeURIComponent(e.name);
+}
+
+function eventCard(parent, e, width, opts) {
   const c = parent.addStack();
   c.layoutVertically();
+  const url = eventUrl(opts, e);
+  if (url) c.url = url;
   // الجارية والكبرى (كأس آسيا، موسم الرياض…) أوضح من غيرها
   c.backgroundColor = new Color("#ffffff", e.ongoing || e.major ? 0.2 : 0.11);
   c.cornerRadius = 11;
   c.setPadding(5, 6, 5, 6);
-  c.size = new Size(0, 54);   // العرض مرن كي يملأ الشريط عرض الأداة
+  c.size = new Size(0, e.price || url ? 64 : 54);   // العرض مرن كي يملأ الشريط عرض الأداة
   const line = (text, font, color, icon) => {
     const r = c.addStack();
     r.layoutHorizontally();
@@ -363,9 +380,12 @@ function eventCard(parent, e, width) {
   line(e.label, Font.systemFont(9), SOFT);
   c.addSpacer(2);
   line([e.when, e.avail].filter(Boolean).join(" • "), Font.boldSystemFont(8.5), e.avail === "محجوزة ✓" ? WHITE : SOFT);
+  // تحت كل مناسبة: سعرها الخاص إن حُدد، وإلا دعوة لتحديده
+  if (e.price) { c.addSpacer(2); line("سعر خاص " + e.price + " ر.س", Font.heavySystemFont(8.5), WHITE, "tag.fill"); }
+  else if (url) { c.addSpacer(2); line("تحديد السعر ›", Font.systemFont(8), SOFT); }
 }
 
-function eventsStrip(parent, events, width) {
+function eventsStrip(parent, events, width, opts) {
   const list = (events || []).slice(0, 3);
   if (!list.length) return false;
   const gap = 6;
@@ -374,7 +394,7 @@ function eventsStrip(parent, events, width) {
   r.layoutHorizontally();
   // الأقرب يظهر يميناً على جوال عربي
   const ordered = RTL ? list : list.slice().reverse();
-  ordered.forEach((e, i) => { if (i) r.addSpacer(gap); eventCard(r, e, cw); });
+  ordered.forEach((e, i) => { if (i) r.addSpacer(gap); eventCard(r, e, cw, opts); });
   return true;
 }
 
@@ -531,7 +551,7 @@ function upcomingRows(parent, d, skip, show, limit) {
 }
 
 // الصفحة 2: المناسبات قائمةً في بطاقة، ثم مؤشرات الشهر والأسعار
-function numbersPage(w, d) {
+function numbersPage(w, d, opts) {
   const cw = contentWidth();
   const ev = (d.events || []).slice(0, 6);
   if (ev.length) {
@@ -544,14 +564,16 @@ function numbersPage(w, d) {
     c.addSpacer(4);
     ev.forEach((e, i) => {
       if (i) c.addSpacer(3);
-      splitRow(c, e.name + " • " + e.label, [e.when, e.avail].filter(Boolean).join(" • "),
+      const r = splitRow(c, e.name + " • " + e.label, [e.when, e.avail, e.price ? e.price + " ر.س" : ""].filter(Boolean).join(" • "),
         { icon: e.icon, iconSize: 11, font: e.major ? Font.boldSystemFont(12) : Font.systemFont(12) });
+      const url = eventUrl(opts, e);
+      if (url) r.url = url;
     });
   }
   w.addSpacer();
   compareTiles(w, d.stats, d.prevStats, cw);
   w.addSpacer(6);
-  slimPrices(w, d.prices, cw);
+  slimPrices(w, d.prices, cw, opts, d.pricing);
 }
 
 async function build(opts) {
@@ -636,7 +658,7 @@ async function build(opts) {
     w.addSpacer();
     return w;
   }
-  if (page === "2") { numbersPage(w, d); return w; }
+  if (page === "2") { numbersPage(w, d, opts); return w; }
   if (!main) {
     row(w, "لا حجوزات قادمة", { icon: "calendar.badge.checkmark", font: Font.boldSystemFont(15), color: WHITE, iconSize: 15 });
     if (family === "large" && page === "1") {
@@ -662,13 +684,13 @@ async function build(opts) {
       billRows(w, d.bills, false);
       const cw = contentWidth();
       w.addSpacer();
-      eventsStrip(w, d.events, cw);
+      eventsStrip(w, d.events, cw, opts);
       w.addSpacer();
       actionPills(w, d.incomplete, opts, cw);
       w.addSpacer(6);
       compareTiles(w, d.stats, d.prevStats, cw);
       w.addSpacer(6);
-      slimPrices(w, d.prices, cw);
+      slimPrices(w, d.prices, cw, opts, d.pricing);
       return w;
     } else if (family === "medium") {
       w.addSpacer();
@@ -736,7 +758,7 @@ async function build(opts) {
   const infoLines = (d.departuresToday || []).length + (second ? 1 : 0) + (last ? 1 : 0) + (d.bills || []).length;
   const cw = contentWidth();
   // فراغان مرنان حول المناسبات: تتوسط المساحة الفارغة بدل الالتصاق بأعلاها
-  if (infoLines <= 3) { w.addSpacer(); eventsStrip(w, d.events, cw); }
+  if (infoLines <= 3) { w.addSpacer(); eventsStrip(w, d.events, cw, opts); }
   else if (infoLines <= 4) { w.addSpacer(); eventLine(w, d.events); }
 
   w.addSpacer();
@@ -744,7 +766,7 @@ async function build(opts) {
   w.addSpacer(6);
   compareTiles(w, d.stats, d.prevStats, cw);
   w.addSpacer(6);
-  slimPrices(w, d.prices, cw);
+  slimPrices(w, d.prices, cw, opts, d.pricing);
   return w;
 }
 
@@ -793,7 +815,10 @@ async function rpc(fn, body) {
   if (/invalid widget key/.test(msg)) throw new Error("مفتاح الأداة غير صالح — انسخ السكربت من لوحة التحكم ← الإشعارات من جديد");
   if (/invalid dates/.test(msg)) throw new Error("تواريخ غير صحيحة (الحد 60 ليلة)");
   if (/booking not found/.test(msg)) throw new Error("الحجز لم يعد يحتاج إكمالاً أو أُلغي");
-  if (/PGRST202|Could not find the function/.test(msg + (j && j.code))) throw new Error("طبّق الهجرة 0015 في Supabase أولاً");
+  if (/invalid price/.test(msg)) throw new Error("سعر غير صحيح — من 50 إلى 5000 ر.س");
+  if (/PGRST202|Could not find the function/.test(msg + (j && j.code))) {
+    throw new Error("طبّق الهجرة " + (/pric/.test(fn) ? "0016" : "0015") + " في Supabase أولاً");
+  }
   throw new Error("رفض الخادم الطلب (" + code + ")" + (msg ? ": " + msg : ""));
 }
 
@@ -926,17 +951,86 @@ async function completeFlow(key) {
   }
 }
 
+/* ---------- الأسعار ---------- */
+const round10 = (x) => Math.round(x / 10) * 10;
+
+// سعر وسط الأسبوع والويكند المعروض للضيوف في الموقع
+async function editPrices(key) {
+  let cur;
+  try { cur = await rpc("public_pricing", {}); } catch (e) { await say("تعذّر تحميل الأسعار", e.message); return; }
+  const a = new Alert();
+  a.title = "أسعار الليلة";
+  a.message = "السعر الذي يراه الضيف في الموقع\nالويكند = ليلتا الخميس والجمعة";
+  a.addTextField("وسط الأسبوع (ر.س)", String(cur.weekday)).setNumberPadKeyboard();
+  a.addTextField("الويكند (ر.س)", String(cur.weekend)).setNumberPadKeyboard();
+  a.addAction("حفظ");
+  a.addCancelAction("إلغاء");
+  if (await a.present() < 0) return;
+  const wd = Math.round(num(a.textFieldValue(0)) || 0), we = Math.round(num(a.textFieldValue(1)) || 0);
+  try {
+    await rpc("widget_set_prices", { p_key: key, p_weekday: wd, p_weekend: we });
+  } catch (e) { await say("لم تُحفظ الأسعار", e.message); return; }
+  await say("✅ حُفظت الأسعار", "وسط الأسبوع " + wd + " ر.س • الويكند " + we + " ر.س\nتظهر للضيوف في الموقع فوراً.");
+}
+
+// سعر خاص لكل ليالي مناسبة — بخيارات جاهزة من سعر الويكند أو سعر تحدده
+async function editEventPrice(key, p) {
+  const from = p.from, to = p.to, name = p.name || "المناسبة";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from || "") || !/^\d{4}-\d{2}-\d{2}$/.test(to || "")) return;
+  let cur;
+  try { cur = await rpc("public_pricing", {}); } catch (e) { await say("تعذّر تحميل الأسعار", e.message); return; }
+  const ov = (cur.overrides || []).find((o) => o.from === from && o.to === to);
+  const nights = Math.round((fromIso(to) - fromIso(from)) / DAY_MS) + 1;
+  const base = Number(cur.weekend) || 280;
+  const choices = [
+    { label: "+25% ← " + round10(base * 1.25) + " ر.س", v: round10(base * 1.25) },
+    { label: "+50% ← " + round10(base * 1.5) + " ر.س", v: round10(base * 1.5) },
+    { label: "ضعف السعر ← " + round10(base * 2) + " ر.س", v: round10(base * 2) },
+    { label: "سعر آخر…", v: "custom" },
+  ];
+  if (ov) choices.push({ label: "إلغاء السعر الخاص (العودة للعادي)", v: 0 });
+
+  const a = new Alert();
+  a.title = name + " • " + dayLabel(from) + (to !== from ? " ← " + dayLabel(to) : "");
+  a.message = "سعر كل ليلة من لياليها (" + nightsWord(nights) + ")\n"
+    + (ov ? "الحالي: سعر خاص " + ov.price + " ر.س" : "الحالي: العادي " + cur.weekday + " / الويكند " + cur.weekend + " ر.س")
+    + "\nالنسب محسوبة من سعر الويكند";
+  choices.forEach((c) => a.addAction(c.label));
+  a.addCancelAction("إغلاق");
+  const i = await a.presentSheet();
+  if (i < 0) return;
+  let price = choices[i].v;
+  if (price === "custom") {
+    const f = new Alert();
+    f.title = "سعر الليلة في " + name;
+    f.addTextField("السعر (ر.س)", ov ? String(ov.price) : String(base)).setNumberPadKeyboard();
+    f.addAction("حفظ");
+    f.addCancelAction("إلغاء");
+    if (await f.present() < 0) return;
+    price = Math.round(num(f.textFieldValue(0)) || 0);
+    if (!price) return;
+  }
+  try {
+    await rpc("widget_set_event_price", { p_key: key, p_from: from, p_to: to, p_price: price || null, p_label: name });
+  } catch (e) { await say("لم يُحفظ السعر", e.message); return; }
+  await say(price ? "✅ سعر " + name + ": " + price + " ر.س" : "✅ أُلغي السعر الخاص",
+    price ? "لكل ليلة من " + dayLabel(from) + " إلى " + dayLabel(to) + " — يظهر للضيوف في الموقع فوراً."
+      : "ليالي " + name + " تعود للسعر العادي.");
+}
+
 // يُستدعى من المُحمِّل عند التشغيل داخل التطبيق بـ ?action=… — يعيد true إن تولّى الطلب
 async function handle(opts, params) {
   const action = params && params.action;
-  if (action !== "book" && action !== "complete") return false;
+  if (["book", "complete", "prices", "event"].indexOf(action) === -1) return false;
   if (!hasWriteKey(opts)) {
     const r = await say("يلزم تحديث السكربت", "لتفعيل الحجز السريع من الأداة: لوحة التحكم ← الإشعارات ← نسخ السكربت، ثم ألصقه مكان القديم في Scriptable.\nأو افتح لوحة التحكم الآن.", ["فتح لوحة التحكم", "إغلاق"]);
     if (r === 0) Safari.open(ADMIN_URL + "#" + action);
     return true;
   }
   if (action === "book") await quickBook(opts.WRITE_KEY);
-  else await completeFlow(opts.WRITE_KEY);
+  else if (action === "complete") await completeFlow(opts.WRITE_KEY);
+  else if (action === "prices") await editPrices(opts.WRITE_KEY);
+  else await editEventPrice(opts.WRITE_KEY, params);
   return true;
 }
 

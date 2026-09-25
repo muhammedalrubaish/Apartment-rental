@@ -190,7 +190,8 @@ const DIRECT_SOURCES = ['direct', 'whatsapp', 'manual'];
 const WEEKEND_NIGHTS = [4, 5];   // الخميس والجمعة (getUTCDay)
 const CONFIGURED = { weekday: 220, weekend: 280 };
 
-function priceRanges(rows, sourceOf) {
+function priceRanges(rows, sourceOf, configured) {
+    const conf = configured || CONFIGURED;
     const groups = { weekday: [], weekend: [] };
     rows.forEach((b) => {
         const ci = String(b.checkin).slice(0, 10), co = String(b.checkout).slice(0, 10);
@@ -209,10 +210,37 @@ function priceRanges(rows, sourceOf) {
     const range = (arr, fallback) => (arr.length
         ? { min: Math.min(...arr), max: Math.max(...arr), count: arr.length, configured: false }
         : { min: fallback, max: fallback, count: 0, configured: true });
-    return { weekday: range(groups.weekday, CONFIGURED.weekday), weekend: range(groups.weekend, CONFIGURED.weekend) };
+    return { weekday: range(groups.weekday, conf.weekday), weekend: range(groups.weekend, conf.weekend) };
 }
 
-async function loadPrices(token, bookings) {
+/* أسعار الموقع الحالية (الهجرة 0016): وسط الأسبوع والويكند والأسعار الخاصة للمناسبات.
+   null إن لم تُطبَّق الهجرة — فتبقى الأرقام المعتمدة في CONFIGURED */
+async function loadSitePricing() {
+    try {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/public_pricing`, {
+            method: 'POST',
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+        if (!r.ok) return null;
+        const p = await r.json();
+        return p && Number(p.weekday) > 0 ? {
+            weekday: Number(p.weekday), weekend: Number(p.weekend),
+            overrides: Array.isArray(p.overrides) ? p.overrides : [],
+        } : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// السعر الخاص لمناسبة: المطابق لتواريخها تماماً، وإلا أي سعر خاص يتقاطع معها
+function eventPrice(e, overrides) {
+    const list = overrides || [];
+    return list.find((o) => o.from === e.start && o.to === e.end)
+        || list.find((o) => o.from <= e.end && o.to >= e.start) || null;
+}
+
+async function loadPrices(token, bookings, configured) {
     const sourceOf = {};
     (bookings || []).forEach((b) => {
         if (b && b.checkin && b.checkout && b.status !== 'cancelled') {
@@ -233,9 +261,9 @@ async function loadPrices(token, bookings) {
         const list = Array.isArray(rows) ? rows : [];
         // مفاتيح الحجوزات التي لها مبلغ — لمعرفة المستوردة الناقصة (بلا مبلغ)
         const paid = new Set(list.map((x) => String(x.checkin).slice(0, 10) + '|' + String(x.checkout).slice(0, 10)));
-        return { ranges: priceRanges(list, sourceOf), paid: r.ok ? paid : null };
+        return { ranges: priceRanges(list, sourceOf, configured), paid: r.ok ? paid : null };
     } catch (e) {
-        return { ranges: priceRanges([]), paid: null };
+        return { ranges: priceRanges([], null, configured), paid: null };
     }
 }
 
@@ -320,13 +348,20 @@ module.exports = async (req, res) => {
         const summary = summarize(Array.isArray(rows) ? rows : []);
         summary.stats = monthStats(Array.isArray(rows) ? rows : [], 0);
         summary.prevStats = monthStats(Array.isArray(rows) ? rows : [], -1);
-        const [bills, priced] = await Promise.all([loadBills(token), loadPrices(token, rows)]);
+        const site = await loadSitePricing();
+        const [bills, priced] = await Promise.all([loadBills(token), loadPrices(token, rows, site)]);
+        summary.pricing = site || { weekday: CONFIGURED.weekday, weekend: CONFIGURED.weekend, overrides: [], fromFile: true };
         summary.bills = bills;
         summary.prices = priced.ranges;
         summary.incomplete = incompleteSummary(Array.isArray(rows) ? rows : [], priced.paid);
         // مناسبات الرياض القادمة مع توفر الشقة فيها — خطأ فيها لا يُسقط الأداة
         // 6: ثلاث بطاقات في التصميم المجمّع، وقائمة من ست في الصفحة 2
-        try { summary.events = upcomingEvents(riyadhToday(), Array.isArray(rows) ? rows : [], 6); } catch (e) { summary.events = []; }
+        try {
+            summary.events = upcomingEvents(riyadhToday(), Array.isArray(rows) ? rows : [], 6).map((e) => {
+                const o = eventPrice(e, summary.pricing.overrides);
+                return o ? Object.assign(e, { price: Number(o.price) }) : e;
+            });
+        } catch (e) { summary.events = []; }
 
         if (q.digest) {
             const key = String(req.headers['x-sync-key'] || '').trim();
@@ -355,4 +390,5 @@ module.exports.digestLines = digestLines;
 module.exports.billItems = billItems;
 module.exports.monthStats = monthStats;
 module.exports.priceRanges = priceRanges;
+module.exports.eventPrice = eventPrice;
 module.exports.incompleteSummary = incompleteSummary;
