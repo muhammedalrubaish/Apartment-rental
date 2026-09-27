@@ -114,7 +114,7 @@ function card(parent, x, title, titleIcon, show, compact) {
   c.addSpacer(3);
   if (show) row(c, nameOf(x, show), { icon: "person.fill", font: Font.boldSystemFont(compact ? 13 : 15), color: WHITE });
   if (compact) {
-    row(c, platformLine(x) + " • " + x.range, { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(11), color: SOFT });
+    row(c, datesAndPlatform(x), { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(11), color: SOFT });
   } else {
     if (platformLine(x)) row(c, platformLine(x), { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(12), color: SOFT });
     row(c, "الوصول " + x.inLabel + "  ←  المغادرة " + x.outLabel, { icon: "calendar", font: Font.systemFont(12), color: SOFT });
@@ -273,6 +273,13 @@ function splitRow(parent, text, side, o) {
 }
 
 // بطاقة رئيسية بثلاثة أسطر: الاسم والحالة، المنصة والتواريخ، الليالي
+/* «(9/27 - 10/11) • Airbnb»: التاريخ رقماً (شهر/يوم) ثم المنصة. الأسماء العربية للأشهر
+   مع أرقام وكلمة إنجليزية في سطر واحد كان iOS يعيد ترتيبها (يقفز اليوم لآخر السطر)؛
+   علامة LRM في البداية تثبّت اتجاه السطر من اليسار فيظهر بالترتيب المكتوب تماماً */
+const md = (iso) => { const p = String(iso || "").split("-"); return Number(p[1]) + "/" + Number(p[2]); };
+const numRange = (x) => "\u200E(" + md(x.checkin) + " - " + md(x.checkout) + ")";
+const datesAndPlatform = (x) => [numRange(x)].concat(guestAndPlatform(x, false)).join(" • ");
+
 function heroCard(parent, x, status, icon, show) {
   const c = parent.addStack();
   c.layoutVertically();
@@ -281,8 +288,7 @@ function heroCard(parent, x, status, icon, show) {
   c.setPadding(8, 11, 8, 11);
   splitRow(c, show ? nameOf(x, show) : status, show ? status : "", { icon, iconSize: 14 });
   c.addSpacer(4);
-  row(c, guestAndPlatform(x, false).concat([x.inLabel + " ← " + x.outLabel]).join(" • "),
-    { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(12), color: SOFT });
+  row(c, datesAndPlatform(x), { icon: PLATFORM_ICON[x.source] || "calendar", font: Font.systemFont(12), color: SOFT });
   const nights = x.when === "مقيم الآن" ? "باقي " + nightsLeftWord(x.nightsLeft) + " من " + x.nightsLabel : x.nightsLabel;
   row(c, nights, { icon: "moon.fill", font: Font.systemFont(12), color: SOFT });
   return c;
