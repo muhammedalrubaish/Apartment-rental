@@ -574,7 +574,6 @@
     const PAGE_META = {
         dashboard: ['لوحة التحكم', 'نظرة شاملة على التشغيل والإيرادات والمصاريف'],
         calendar: ['التقويم', 'الحجوزات والمزامنة مع منصات الحجز'],
-        reports: ['التقارير', 'تقارير شهرية وسنوية قابلة للتصدير مع توصيات المستشار الذكي'],
         messages: ['الرسائل', 'محادثات الزبائن من الموقع والمنصات'],
         properties: ['العقارات', 'الوحدات المُدارة وتفاصيلها'],
         contacts: ['جهات الاتصال', 'الزبائن من الموقع والإضافات اليدوية'],
@@ -598,7 +597,6 @@
         ({
             dashboard: renderDashboard,
             calendar: renderCalendar,
-            reports: renderReports,
             messages: renderMessages,
             properties: renderProperties,
             contacts: renderContacts,
@@ -677,7 +675,7 @@
 
     function renderDashboard() {
         renderIncomplete();
-        renderAdvisorPreview();   // أهم توصيات المستشار الذكي (تسعير وتحصيل)
+        renderReports();          // التقارير الشهرية/السنوية والمستشار الذكي
         const s = stats();
 
         // حصيلة السنة الميلادية الجارية — بالمعادلة نفسها: الإجمالي ناقص العمولة
@@ -3433,13 +3431,13 @@
         $('#lang-label').textContent = ar ? 'EN' : 'ع';
 
         const EN = {
-            'nav.dashboard': 'Dashboard', 'nav.calendar': 'Calendar', 'nav.reports': 'Reports', 'nav.messages': 'Messages',
+            'nav.dashboard': 'Dashboard', 'nav.calendar': 'Calendar', 'nav.messages': 'Messages',
             'nav.properties': 'Properties', 'nav.contacts': 'Contacts',
             'nav.notifications': 'Notifications', 'nav.settings': 'Settings',
             'action.newBooking': 'New booking',
         };
         const AR = {
-            'nav.dashboard': 'لوحة التحكم', 'nav.calendar': 'التقويم', 'nav.reports': 'التقارير', 'nav.messages': 'الرسائل',
+            'nav.dashboard': 'لوحة التحكم', 'nav.calendar': 'التقويم', 'nav.messages': 'الرسائل',
             'nav.properties': 'العقارات', 'nav.contacts': 'جهات الاتصال',
             'nav.notifications': 'الإشعارات', 'nav.settings': 'الإعدادات',
             'action.newBooking': 'حجز جديد',
@@ -4100,7 +4098,7 @@
     }
 
     /* ---------------------------------------------------------------------
-       16. التقارير الشهرية والسنوية + المستشار الذكي
+       16. التقارير الشهرية والسنوية + المستشار الذكي (داخل لوحة التحكم)
        - التقرير يُحسب من الحجوزات والمصاريف المحمَّلة من Supabase نفسها
          (الإيراد بتاريخ الوصول، والإشغال بالليالي الفعلية داخل الفترة).
        - التصدير: نسخة طباعة/PDF مستقلة بتنسيق كامل، وملف CSV يفتح في Excel،
@@ -4127,8 +4125,7 @@
                 if (!error && data && Number(data.weekday) > 0) {
                     pricingInfo = { weekday: Number(data.weekday), weekend: Number(data.weekend) || Number(data.weekday),
                         overrides: data.overrides || [], origin: 'القاعدة' };
-                    if (currentView() === 'reports') renderReports();
-                    else if (currentView() === 'dashboard') renderAdvisorPreview();
+                    if (currentView() === 'dashboard') renderReports();
                     return;
                 }
             }
@@ -4140,8 +4137,7 @@
             const wd = Number(p.weekday_price) || Number(p.price_per_night) || 0;
             pricingInfo = { weekday: wd, weekend: Number(p.weekend_price) || wd, overrides: [], origin: 'ملف الموقع' };
         } catch (e) { console.warn('[pricing] تعذّر قراءة apartments.json:', e); }
-        if (currentView() === 'reports') renderReports();
-        else if (currentView() === 'dashboard') renderAdvisorPreview();
+        if (currentView() === 'dashboard') renderReports();
     }
 
     /* الليالي المحجوزة داخل نطاق (شامل الطرفين) — الليلة تُنسب ليوم بدايتها،
@@ -4474,7 +4470,7 @@
         }
         const pendingSoon = realBookings().filter((b) => b.status === 'pending' && b.checkin >= today && b.checkin <= addDays(today, 7));
         if (pendingSoon.length) {
-            items.push({ level: 'collect', icon: '⏳', title: `${countLbl(pendingSoon.length, 'حجز واحد', 'حجزان', 'حجوزات', 'حجزاً')} بانتظار التأكيد تصل خلال أسبوع`,
+            items.push({ level: 'collect', icon: '⏳', title: `${countLbl(pendingSoon.length, 'حجز واحد بانتظار التأكيد يصل', 'حجزان بانتظار التأكيد يصلان', 'حجوزات بانتظار التأكيد تصل', 'حجزاً بانتظار التأكيد تصل')} خلال أسبوع`,
                 body: pendingSoon.map((b) => `${b.guest || 'ضيف'} (${fmtDateNoYear(b.checkin)} • ${money(b.total)})`).join('، ') + '.',
                 action: 'أكّد الحجز واطلب العربون أو كامل المبلغ قبل الوصول' });
         }
@@ -4635,20 +4631,6 @@
     function bindAdviceActions(zone) {
         if (!zone) return;
         $$('[data-advice-complete]', zone).forEach((b) => b.addEventListener('click', () => runIntent('complete')));
-    }
-
-    function renderAdvisorPreview() {
-        const card = $('#advisor-card');
-        if (!card || !bookingsLoaded) return;
-        const { items } = buildAdvice();
-        const top = items.filter((x) => x.level !== 'info').slice(0, 3);
-        card.hidden = !top.length;
-        if (!top.length) return;
-        const actionable = items.filter((x) => ['collect', 'up', 'down', 'warn'].indexOf(x.level) !== -1).length;
-        $('#advisor-count').textContent = actionable ? `${actionable} ${actionable === 1 ? 'توصية' : 'توصيات'}` : 'لا إجراء مطلوب';
-        $('#advisor-count').className = 'tag ' + (actionable ? 'tag-warn' : 'tag-ok');
-        $('#advisor-zone').innerHTML = renderAdviceList(top, false);
-        bindAdviceActions($('#advisor-zone'));
     }
 
     /* ---- التصدير ---- */
