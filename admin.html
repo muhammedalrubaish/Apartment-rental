@@ -91,6 +91,11 @@
                 <span data-i18n="nav.calendar">التقويم</span>
             </button>
 
+            <button class="rail-btn" data-view="reports">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><rect x="5" y="11" width="3.5" height="7" rx="1"/><rect x="10.25" y="6" width="3.5" height="12" rx="1"/><rect x="15.5" y="9" width="3.5" height="9" rx="1"/></svg>
+                <span data-i18n="nav.reports">التقارير</span>
+            </button>
+
             <button class="rail-btn" data-view="messages">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/></svg>
                 <span data-i18n="nav.messages">الرسائل</span>
@@ -177,6 +182,16 @@
                     <span class="sub" style="margin-inline-start:auto">وصلت تلقائياً من المنصات بلا مبلغ أو اسم</span>
                 </div>
                 <div id="incomplete-zone"></div>
+            </div>
+
+            <!-- المستشار الذكي: أهم ثلاث توصيات (تسعير وتحصيل) — التفصيل في قسم التقارير -->
+            <div class="card" id="advisor-card" hidden>
+                <div class="card-head">
+                    <h2>🧠 المستشار الذكي</h2>
+                    <span class="tag" id="advisor-count"></span>
+                    <button class="btn btn-ghost btn-sm" data-goto="reports" style="margin-inline-start:auto">كل التوصيات والتقرير</button>
+                </div>
+                <div id="advisor-zone"></div>
             </div>
 
             <!-- تقييمات الضيوف من الموقع: المعلّق أولاً للاعتماد أو الحذف (الهجرة 0009) -->
@@ -328,6 +343,65 @@
                 </p>
                 <div id="sync-list"></div>
                 <button class="btn btn-ghost btn-sm" id="btn-add-sync" style="margin-top:12px">+ إضافة رابط منصة</button>
+            </div>
+        </section>
+
+        <!-- ============ 2ب) التقارير والمستشار الذكي ============ -->
+        <section class="view" id="view-reports">
+            <!-- اختيار الفترة (شهري/سنوي) وأزرار التصدير: PDF عبر الطباعة، Excel (CSV)، وملف HTML -->
+            <div class="card">
+                <div class="rep-controls">
+                    <div class="seg" id="rep-mode">
+                        <button data-mode="monthly" class="active">تقرير شهري</button>
+                        <button data-mode="yearly">تقرير سنوي</button>
+                    </div>
+                    <div class="rep-pickers">
+                        <select class="input" id="rep-month" aria-label="الشهر"></select>
+                        <select class="input" id="rep-year" aria-label="السنة"></select>
+                    </div>
+                    <div class="rep-exports">
+                        <button class="btn btn-primary btn-sm" id="btn-rep-pdf" title="فتح نسخة للطباعة أو الحفظ PDF">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="6" y="14" width="12" height="7"/><path d="M4 9h16a2 2 0 0 1 2 2v5h-4M2 16v-5a2 2 0 0 1 2-2"/></svg>
+                            <span>PDF / طباعة</span>
+                        </button>
+                        <button class="btn btn-ghost btn-sm" id="btn-rep-csv" title="ملف CSV يفتح في Excel">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>
+                            <span>Excel</span>
+                        </button>
+                        <button class="btn btn-ghost btn-sm" id="btn-rep-html" title="تنزيل التقرير ملفاً مستقلاً">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>
+                            <span>HTML</span>
+                        </button>
+                    </div>
+                </div>
+                <p class="sub" id="rep-range-lbl" style="font-size:12.5px;margin-top:10px"></p>
+            </div>
+
+            <div class="grid grid-kpi" id="rep-kpi"></div>
+
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-head"><h2 id="rep-chart-title">الأداء الشهري</h2><span class="sub" id="rep-chart-sub"></span></div>
+                    <div id="rep-chart"></div>
+                </div>
+                <div class="card">
+                    <div class="card-head"><h2>مصادر الحجوزات</h2><span class="sub">الإجمالي والعمولة لكل منصة</span></div>
+                    <div id="rep-sources"></div>
+                </div>
+            </div>
+
+            <div class="card" id="advisor-full-card">
+                <div class="card-head">
+                    <h2>🧠 المستشار الذكي</h2>
+                    <span class="sub" id="advisor-sub">تحليل الإشغال والأسعار والتحصيل من بياناتك الفعلية</span>
+                </div>
+                <div class="grid grid-3" id="advisor-metrics" style="margin-bottom:12px"></div>
+                <div id="advisor-full"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-head"><h2 id="rep-table-title">تفصيل الحجوزات</h2><span class="sub" id="rep-table-sub"></span></div>
+                <div class="table-wrap" id="rep-table"></div>
             </div>
         </section>
 

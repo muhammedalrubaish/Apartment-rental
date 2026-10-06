@@ -574,6 +574,7 @@
     const PAGE_META = {
         dashboard: ['لوحة التحكم', 'نظرة شاملة على التشغيل والإيرادات والمصاريف'],
         calendar: ['التقويم', 'الحجوزات والمزامنة مع منصات الحجز'],
+        reports: ['التقارير', 'تقارير شهرية وسنوية قابلة للتصدير مع توصيات المستشار الذكي'],
         messages: ['الرسائل', 'محادثات الزبائن من الموقع والمنصات'],
         properties: ['العقارات', 'الوحدات المُدارة وتفاصيلها'],
         contacts: ['جهات الاتصال', 'الزبائن من الموقع والإضافات اليدوية'],
@@ -597,6 +598,7 @@
         ({
             dashboard: renderDashboard,
             calendar: renderCalendar,
+            reports: renderReports,
             messages: renderMessages,
             properties: renderProperties,
             contacts: renderContacts,
@@ -675,6 +677,7 @@
 
     function renderDashboard() {
         renderIncomplete();
+        renderAdvisorPreview();   // أهم توصيات المستشار الذكي (تسعير وتحصيل)
         const s = stats();
 
         // حصيلة السنة الميلادية الجارية — بالمعادلة نفسها: الإجمالي ناقص العمولة
@@ -3430,13 +3433,13 @@
         $('#lang-label').textContent = ar ? 'EN' : 'ع';
 
         const EN = {
-            'nav.dashboard': 'Dashboard', 'nav.calendar': 'Calendar', 'nav.messages': 'Messages',
+            'nav.dashboard': 'Dashboard', 'nav.calendar': 'Calendar', 'nav.reports': 'Reports', 'nav.messages': 'Messages',
             'nav.properties': 'Properties', 'nav.contacts': 'Contacts',
             'nav.notifications': 'Notifications', 'nav.settings': 'Settings',
             'action.newBooking': 'New booking',
         };
         const AR = {
-            'nav.dashboard': 'لوحة التحكم', 'nav.calendar': 'التقويم', 'nav.messages': 'الرسائل',
+            'nav.dashboard': 'لوحة التحكم', 'nav.calendar': 'التقويم', 'nav.reports': 'التقارير', 'nav.messages': 'الرسائل',
             'nav.properties': 'العقارات', 'nav.contacts': 'جهات الاتصال',
             'nav.notifications': 'الإشعارات', 'nav.settings': 'الإعدادات',
             'action.newBooking': 'حجز جديد',
@@ -4096,6 +4099,704 @@
         input.click();
     }
 
+    /* ---------------------------------------------------------------------
+       16. التقارير الشهرية والسنوية + المستشار الذكي
+       - التقرير يُحسب من الحجوزات والمصاريف المحمَّلة من Supabase نفسها
+         (الإيراد بتاريخ الوصول، والإشغال بالليالي الفعلية داخل الفترة).
+       - التصدير: نسخة طباعة/PDF مستقلة بتنسيق كامل، وملف CSV يفتح في Excel،
+         وملف HTML محفوظ.
+       - المستشار الذكي: محرك قواعد محلي (لا يرسل بياناتك لأي خدمة خارجية)
+         يقرأ الإشغال الماضي والقادم، وفرق الويكند عن وسط الأسبوع، وسعر
+         الليلة المحقَّق مقابل السعر المعلن، والفجوات القادمة، وحصة العمولات،
+         ثم يقترح رفع/خفض السعر بأرقام محددة ويرصد الإيرادات غير المحصَّلة.
+       --------------------------------------------------------------------- */
+    const REPORT_COLORS = { brand: '#f2622a', ok: '#16a34a', info: '#0284c7', warn: '#d97706', danger: '#dc2626', muted: '#8a94a2', line: '#e2e6ec' };
+    const WEEKEND_DOWS = [4, 5];   // الخميس والجمعة — كما في صفحة الشقة
+
+    const _rn = new Date();
+    let report = { mode: 'monthly', year: _rn.getFullYear(), month: _rn.getMonth() };
+
+    /* أسعار الليلة المعلنة: من القاعدة (الهجرة 0016) وإلا من apartments.json */
+    let pricingInfo = { weekday: 0, weekend: 0, overrides: [], origin: '' };
+
+    async function loadPricingInfo() {
+        const client = sbc();
+        try {
+            if (client) {
+                const { data, error } = await client.rpc('public_pricing');
+                if (!error && data && Number(data.weekday) > 0) {
+                    pricingInfo = { weekday: Number(data.weekday), weekend: Number(data.weekend) || Number(data.weekday),
+                        overrides: data.overrides || [], origin: 'القاعدة' };
+                    if (currentView() === 'reports') renderReports();
+                    else if (currentView() === 'dashboard') renderAdvisorPreview();
+                    return;
+                }
+            }
+        } catch (e) { console.warn('[pricing] تعذّر جلب الأسعار من القاعدة:', e); }
+        try {
+            const r = await fetch('apartments.json');
+            const j = await r.json();
+            const p = (j.property_info && j.property_info.pricing) || {};
+            const wd = Number(p.weekday_price) || Number(p.price_per_night) || 0;
+            pricingInfo = { weekday: wd, weekend: Number(p.weekend_price) || wd, overrides: [], origin: 'ملف الموقع' };
+        } catch (e) { console.warn('[pricing] تعذّر قراءة apartments.json:', e); }
+        if (currentView() === 'reports') renderReports();
+        else if (currentView() === 'dashboard') renderAdvisorPreview();
+    }
+
+    /* الليالي المحجوزة داخل نطاق (شامل الطرفين) — الليلة تُنسب ليوم بدايتها،
+       ومجموعة التواريخ تمنع عدّ الليلة مرتين عند تداخل حجزين */
+    function bookedNightsIn(from, to, list) {
+        const set = new Map();
+        (list || realBookings()).forEach((b) => {
+            let d = b.checkin;
+            while (d < b.checkout) {
+                if (d >= from && d <= to && !set.has(d)) set.set(d, b);
+                d = addDays(d, 1);
+            }
+        });
+        return set;
+    }
+
+    function occupancyIn(from, to) {
+        const days = nightsBetween(from, to) + 1;
+        const map = bookedNightsIn(from, to);
+        let weekend = 0, weekendBooked = 0;
+        for (let d = from; d <= to; d = addDays(d, 1)) {
+            const dow = new Date(d + 'T00:00:00').getDay();
+            if (WEEKEND_DOWS.indexOf(dow) !== -1) { weekend++; if (map.has(d)) weekendBooked++; }
+        }
+        const weekday = days - weekend;
+        const weekdayBooked = map.size - weekendBooked;
+        return {
+            days, booked: map.size, pct: days ? Math.round((map.size / days) * 100) : 0,
+            weekend, weekendBooked, weekendPct: weekend ? Math.round((weekendBooked / weekend) * 100) : 0,
+            weekday, weekdayBooked, weekdayPct: weekday ? Math.round((weekdayBooked / weekday) * 100) : 0,
+            map,
+        };
+    }
+
+    /* سعر الليلة المحقَّق (قبل العمولة) حسب نوع الليلة — من الحجوزات ذات المبلغ فقط */
+    function realizedRates(from, to) {
+        let wdSum = 0, wdN = 0, weSum = 0, weN = 0;
+        realBookings().forEach((b) => {
+            const n = nightsBetween(b.checkin, b.checkout);
+            if (!n || !(Number(b.total) > 0)) return;
+            const per = Number(b.total) / n;
+            let d = b.checkin;
+            while (d < b.checkout) {
+                if (d >= from && d <= to) {
+                    const dow = new Date(d + 'T00:00:00').getDay();
+                    if (WEEKEND_DOWS.indexOf(dow) !== -1) { weSum += per; weN++; } else { wdSum += per; wdN++; }
+                }
+                d = addDays(d, 1);
+            }
+        });
+        return {
+            weekday: wdN ? round2(wdSum / wdN) : 0, weekend: weN ? round2(weSum / weN) : 0,
+            all: (wdN + weN) ? round2((wdSum + weSum) / (wdN + weN)) : 0, nights: wdN + weN,
+        };
+    }
+
+    /* فجوات الليالي المتاحة داخل نطاق — [{from, to, nights}] */
+    function freeGaps(from, to) {
+        const map = bookedNightsIn(from, to);
+        const gaps = [];
+        let cur = null;
+        for (let d = from; d <= to; d = addDays(d, 1)) {
+            if (map.has(d)) { if (cur) { gaps.push(cur); cur = null; } continue; }
+            if (!cur) cur = { from: d, to: d, nights: 1 };
+            else { cur.to = d; cur.nights++; }
+        }
+        if (cur) gaps.push(cur);
+        return gaps;
+    }
+
+    function periodBounds() {
+        const y = report.year;
+        if (report.mode === 'yearly') {
+            return { from: `${y}-01-01`, to: `${y}-12-31`, label: `السنة ${y}` };
+        }
+        const m = report.month;
+        const last = new Date(y, m + 1, 0).getDate();
+        const name = new Date(y, m, 1).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' });
+        return { from: `${y}-${String(m + 1).padStart(2, '0')}-01`, to: `${y}-${String(m + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`, label: name };
+    }
+
+    /* حصيلة الفترة: مالية (بتاريخ الوصول) + إشغال (بالليالي) + مصادر */
+    function periodStats(from, to) {
+        const r = rangeStats(from, to);
+        const occ = occupancyIn(from, to);
+        const bySource = {};
+        r.bookings.forEach((b) => {
+            const k = b.source || 'manual';
+            const s = bySource[k] || (bySource[k] = { source: k, count: 0, nights: 0, gross: 0, fees: 0, net: 0 });
+            s.count++;
+            s.nights += nightsBetween(b.checkin, b.checkout);
+            s.gross += Number(b.total) || 0;
+            s.fees += bookingCommissionAmount(b);
+            s.net += bookingNet(b);
+        });
+        const sources = Object.values(bySource).sort((a, b) => b.gross - a.gross);
+        const today = todayISO();
+        const realized = r.bookings.filter((b) => b.checkin <= today);
+        return Object.assign(r, {
+            occ, sources,
+            avgStay: r.count ? round2(r.nights / r.count) : 0,
+            realizedRevenue: realized.reduce((s, b) => s + bookingNet(b), 0),
+            realizedCount: realized.length,
+            feePct: r.gross ? Math.round((r.fees / r.gross) * 100) : 0,
+        });
+    }
+
+    function monthRows(year) {
+        const rows = [];
+        for (let m = 0; m < 12; m++) {
+            const last = new Date(year, m + 1, 0).getDate();
+            const mm = String(m + 1).padStart(2, '0');
+            const from = `${year}-${mm}-01`, to = `${year}-${mm}-${String(last).padStart(2, '0')}`;
+            const r = rangeStats(from, to);
+            const occ = occupancyIn(from, to);
+            rows.push({
+                m, from, to,
+                label: new Date(year, m, 1).toLocaleDateString(dateLocale(), { month: 'short' }),
+                long: new Date(year, m, 1).toLocaleDateString(dateLocale(), { month: 'long' }),
+                count: r.count, nights: r.nights, gross: r.gross, fees: r.fees, rev: r.revenue,
+                exp: r.expenses, net: r.net, adr: r.adr, occ: occ.pct,
+            });
+        }
+        return rows;
+    }
+
+    /* رسم أعمدة الإيراد/المصاريف وخط صافي الربح — ألوان صريحة ليصلح للتصدير أيضاً */
+    function cashflowSVG(data, c) {
+        const W = 700, H = 240, pad = { t: 16, r: 12, b: 30, l: 54 };
+        const max = Math.max(1000, ...data.map((d) => Math.max(d.rev, d.exp))) * 1.15;
+        const innerW = W - pad.l - pad.r, innerH = H - pad.t - pad.b;
+        const slot = innerW / data.length;
+        const bw = Math.min(20, slot / 3.2);
+        const yOf = (v) => pad.t + innerH - (v / max) * innerH;
+        let out = '';
+        for (let i = 0; i <= 4; i++) {
+            const y = pad.t + (innerH / 4) * i;
+            const val = Math.round((max / 4) * (4 - i));
+            out += `<line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="${c.line}" stroke-width="1"/>`;
+            out += `<text x="${pad.l - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="${c.muted}" font-weight="600">${val >= 1000 ? (val / 1000).toFixed(val >= 10000 ? 0 : 1) + 'k' : val}</text>`;
+        }
+        data.forEach((d, i) => {
+            const cx = pad.l + slot * i + slot / 2;
+            out += `<rect x="${cx - bw - 2}" y="${yOf(d.rev)}" width="${bw}" height="${Math.max(2, innerH - (yOf(d.rev) - pad.t))}" rx="4" fill="${c.ok}" opacity="${d.dim ? 0.35 : 1}"><title>الإيراد: ${Math.round(d.rev)}</title></rect>`;
+            out += `<rect x="${cx + 2}" y="${yOf(d.exp)}" width="${bw}" height="${Math.max(2, innerH - (yOf(d.exp) - pad.t))}" rx="4" fill="${c.brand}" opacity="${d.dim ? 0.35 : 1}"><title>المصاريف: ${Math.round(d.exp)}</title></rect>`;
+            out += `<text x="${cx}" y="${H - 10}" text-anchor="middle" font-size="10.5" fill="${c.muted}" font-weight="700">${escapeHtml(d.label)}</text>`;
+        });
+        const pts = data.map((d, i) => `${pad.l + slot * i + slot / 2},${yOf(Math.max(0, d.rev - d.exp))}`).join(' ');
+        out += `<polyline points="${pts}" fill="none" stroke="${c.info}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+        data.forEach((d, i) => {
+            out += `<circle cx="${pad.l + slot * i + slot / 2}" cy="${yOf(Math.max(0, d.rev - d.exp))}" r="3.5" fill="#fff" stroke="${c.info}" stroke-width="2"/>`;
+        });
+        return `<svg class="chart" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${out}</svg>`;
+    }
+
+    const CHART_LEGEND = (c) => `<div class="chart-legend" style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;font-weight:600">
+        <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${c.ok};margin-inline-end:5px"></i> الإيراد الواصل</span>
+        <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${c.brand};margin-inline-end:5px"></i> المصاريف</span>
+        <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${c.info};margin-inline-end:5px"></i> صافي الربح</span></div>`;
+
+    const pctDelta = (cur, prev) => (prev ? Math.round(((cur - prev) / prev) * 100) : (cur ? 100 : 0));
+    const deltaTag = (d) => `<span class="kpi-trend ${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${Math.abs(d)}%</span>`;
+
+    /* ---- واجهة قسم التقارير ---- */
+    function fillReportPickers() {
+        const ySel = $('#rep-year'), mSel = $('#rep-month');
+        if (!ySel || !mSel) return;
+        const years = new Set([_rn.getFullYear()]);
+        state.bookings.forEach((b) => { if (b.checkin) years.add(Number(b.checkin.slice(0, 4))); });
+        state.expenses.forEach((e) => { if (e.date) years.add(Number(e.date.slice(0, 4))); });
+        const list = Array.from(years).filter((y) => y > 2000).sort((a, b) => b - a);
+        ySel.innerHTML = list.map((y) => `<option value="${y}"${y === report.year ? ' selected' : ''}>${y}</option>`).join('');
+        mSel.innerHTML = Array.from({ length: 12 }, (_, m) =>
+            `<option value="${m}"${m === report.month ? ' selected' : ''}>${new Date(2000, m, 1).toLocaleDateString(dateLocale(), { month: 'long' })}</option>`).join('');
+        mSel.hidden = report.mode === 'yearly';
+        $$('#rep-mode button').forEach((b) => b.classList.toggle('active', b.dataset.mode === report.mode));
+    }
+
+    function renderReports() {
+        if (!$('#rep-kpi')) return;
+        fillReportPickers();
+        const { from, to, label } = periodBounds();
+        const s = periodStats(from, to);
+        const today = todayISO();
+        const isCurrent = from <= today && to >= today;
+        const isFuture = from > today;
+
+        $('#rep-range-lbl').textContent = `${label} • ${fmtDate(from)} ← ${fmtDate(to)}${isCurrent ? ' • الفترة جارية: الأرقام تشمل الحجوزات القادمة المؤكدة' : ''}`;
+
+        const kpis = [
+            { label: 'الإيراد الواصل', value: money(s.revenue), icon: '💰', color: 'var(--ok)', soft: 'var(--ok-soft)',
+              foot: s.fees ? `إجمالي ${money(s.gross)} − عمولة ${money(s.fees)}` : `إجمالي الحجوزات ${money(s.gross)}` },
+            { label: 'صافي الربح', value: money(s.net), icon: '📈', color: 'var(--info)', soft: 'var(--info-soft)',
+              foot: `بعد مصاريف ${money(s.expenses)} • هامش ${s.margin}%` },
+            { label: 'نسبة الإشغال', value: s.occ.pct + '<small>%</small>', icon: '🏠', color: 'var(--warn)', soft: 'var(--warn-soft)',
+              foot: `${s.occ.booked} من ${s.occ.days} ليلة • ويكند ${s.occ.weekendPct}% / أسبوع ${s.occ.weekdayPct}%` },
+            { label: 'متوسط سعر الليلة', value: money(s.adr), icon: '🛏️', color: 'var(--brand)', soft: 'var(--brand-soft)',
+              foot: `${s.count} حجز • ${s.nights} ليلة • متوسط الإقامة ${s.avgStay} ليلة` },
+        ];
+        if (isCurrent) kpis.push({ label: 'محقَّق حتى اليوم', value: money(s.realizedRevenue), icon: '✅', color: 'var(--ok)', soft: 'var(--ok-soft)',
+            foot: `${s.realizedCount} حجز وصل • المتبقي ${money(s.revenue - s.realizedRevenue)} من حجوزات قادمة` });
+        if (isFuture) kpis.push({ label: 'حجوزات مؤكدة مسبقاً', value: s.count, icon: '📅', color: 'var(--info)', soft: 'var(--info-soft)', foot: 'فترة مستقبلية — الأرقام أولية' });
+
+        $('#rep-kpi').innerHTML = kpis.map((k) => `
+            <div class="kpi" style="--kpi-color:${k.color};--kpi-soft:${k.soft}">
+                <div class="kpi-top"><div class="kpi-icon">${k.icon}</div><div class="kpi-label">${k.label}</div></div>
+                <div class="kpi-value">${k.value}</div>
+                <div class="kpi-foot">${k.foot}</div>
+            </div>`).join('');
+
+        // الرسم: سنوي = 12 شهراً، شهري = شريط الأيام + مقارنات
+        const cssColors = { brand: 'var(--brand)', ok: 'var(--ok)', info: 'var(--info)', muted: 'var(--muted)', line: 'var(--line)' };
+        if (report.mode === 'yearly') {
+            const rows = monthRows(report.year);
+            $('#rep-chart-title').textContent = `الأداء الشهري لسنة ${report.year}`;
+            $('#rep-chart-sub').textContent = `أعلى شهر: ${rows.reduce((a, b) => (b.rev > a.rev ? b : a)).long}`;
+            $('#rep-chart').innerHTML = cashflowSVG(rows.map((r) => ({ label: r.label, rev: r.rev, exp: r.exp, dim: r.from > today })), cssColors) + CHART_LEGEND(cssColors);
+        } else {
+            $('#rep-chart-title').textContent = 'أيام الشهر';
+            $('#rep-chart-sub').textContent = 'كل يوم ملوّن بمصدر الحجز';
+            const cells = [];
+            for (let d = from; d <= to; d = addDays(d, 1)) {
+                const b = s.occ.map.get(d);
+                const cls = b ? `booked src-${b.source || 'manual'}` : '';
+                cells.push(`<div class="rep-day ${cls}${d === today ? ' today' : ''}" title="${escapeHtml(b ? `${b.guest || ''} • ${SOURCE_LABEL[b.source] || b.source}` : 'متاح')}">${Number(d.slice(8))}</div>`);
+            }
+            const prevD = new Date(report.year, report.month - 1, 1);
+            const prevLast = new Date(prevD.getFullYear(), prevD.getMonth() + 1, 0).getDate();
+            const pm = String(prevD.getMonth() + 1).padStart(2, '0');
+            const prev = periodStats(`${prevD.getFullYear()}-${pm}-01`, `${prevD.getFullYear()}-${pm}-${String(prevLast).padStart(2, '0')}`);
+            const lyLast = new Date(report.year - 1, report.month + 1, 0).getDate();
+            const lm = String(report.month + 1).padStart(2, '0');
+            const ly = periodStats(`${report.year - 1}-${lm}-01`, `${report.year - 1}-${lm}-${String(lyLast).padStart(2, '0')}`);
+            $('#rep-chart').innerHTML = `<div class="rep-days">${cells.join('')}</div>
+                <div class="cal-legend" style="margin-top:10px">
+                    <span><i style="background:var(--brand)"></i> مباشر</span>
+                    <span><i style="background:var(--src-gathern)"></i> جاذر إن</span>
+                    <span><i style="background:var(--src-airbnb)"></i> Airbnb</span>
+                    <span><i style="background:var(--src-whatsapp)"></i> واتساب</span>
+                    <span><i style="background:var(--surface-3);border:1px solid var(--line)"></i> متاح</span>
+                </div>
+                <div class="rep-compare">
+                    <div><small>الشهر السابق</small><b>${money(prev.revenue)}</b>${deltaTag(pctDelta(s.revenue, prev.revenue))} <small>إشغال ${prev.occ.pct}%</small></div>
+                    <div><small>الشهر نفسه ${report.year - 1}</small><b>${money(ly.revenue)}</b>${deltaTag(pctDelta(s.revenue, ly.revenue))} <small>إشغال ${ly.occ.pct}%</small></div>
+                    <div><small>سعر الليلة مقابل الشهر السابق</small><b>${money(s.adr)}</b>${deltaTag(pctDelta(s.adr, prev.adr))} <small>كان ${money(prev.adr)}</small></div>
+                </div>`;
+        }
+
+        // المصادر
+        $('#rep-sources').innerHTML = s.sources.length ? s.sources.map((x) => `
+            <div class="bar-row">
+                <div class="bar-top">
+                    <span>${escapeHtml(SOURCE_LABEL[x.source] || x.source)} <span style="color:var(--muted);font-weight:500">• ${x.count} حجز • ${x.nights} ليلة</span></span>
+                    <span class="amt">${money(x.net)} <span style="color:var(--muted);font-weight:500">${x.fees ? `(عمولة ${money(x.fees)})` : ''}</span></span>
+                </div>
+                <div class="bar-track"><div class="bar-fill" style="width:${s.gross ? (x.gross / s.gross) * 100 : 0}%;background:${sourceColor(x.source)}"></div></div>
+            </div>`).join('') : emptyBox('📊', 'لا حجوزات في هذه الفترة', 'اختر فترة أخرى');
+
+        // المستشار
+        const advice = buildAdvice();
+        renderAdviceMetrics(advice.metrics);
+        $('#advisor-full').innerHTML = renderAdviceList(advice.items, true);
+        bindAdviceActions($('#advisor-full'));
+
+        // الجدول
+        if (report.mode === 'yearly') {
+            const rows = monthRows(report.year);
+            $('#rep-table-title').textContent = 'التفصيل الشهري';
+            $('#rep-table-sub').textContent = `${s.count} حجز خلال السنة`;
+            $('#rep-table').innerHTML = `<table><thead><tr><th>الشهر</th><th>حجوزات</th><th>ليالي</th><th>إشغال</th><th>الإجمالي</th><th>العمولة</th><th>الواصل</th><th>المصاريف</th><th>الصافي</th></tr></thead>
+                <tbody>${rows.map((r) => `<tr${r.from > today ? ' style="opacity:.55"' : ''}><td><b>${escapeHtml(r.long)}</b></td><td>${r.count}</td><td>${r.nights}</td><td>${r.occ}%</td><td>${money(r.gross)}</td><td class="dim">${money(r.fees)}</td><td><b>${money(r.rev)}</b></td><td class="dim">${money(r.exp)}</td><td style="color:${r.net >= 0 ? 'var(--ok)' : 'var(--danger)'}"><b>${money(r.net)}</b></td></tr>`).join('')}</tbody>
+                <tfoot><tr style="background:var(--surface-2);font-weight:800"><td>الإجمالي</td><td>${s.count}</td><td>${s.nights}</td><td>${s.occ.pct}%</td><td>${money(s.gross)}</td><td>${money(s.fees)}</td><td>${money(s.revenue)}</td><td>${money(s.expenses)}</td><td>${money(s.net)}</td></tr></tfoot></table>`;
+        } else {
+            $('#rep-table-title').textContent = 'حجوزات الشهر';
+            $('#rep-table-sub').textContent = `${s.count} حجز بتاريخ وصول داخل الشهر`;
+            $('#rep-table').innerHTML = s.bookings.length ? `<table><thead><tr><th>الضيف</th><th>المصدر</th><th>الوصول</th><th>المغادرة</th><th>الليالي</th><th>الإجمالي</th><th>العمولة</th><th>الواصل</th><th>الحالة</th></tr></thead>
+                <tbody>${s.bookings.map((b) => `<tr><td><b>${escapeHtml(b.guest || 'ضيف')}</b></td><td class="dim">${escapeHtml(SOURCE_LABEL[b.source] || b.source)}</td><td>${fmtDateNoYear(b.checkin)}</td><td>${fmtDateNoYear(b.checkout)}</td><td>${nightsBetween(b.checkin, b.checkout)}</td><td>${money(b.total)}</td><td class="dim">${money(bookingCommissionAmount(b))}</td><td><b>${money(bookingNet(b))}</b></td><td><span class="tag ${(STATUS_TAG[b.status] || ['tag-mute'])[0]}">${(STATUS_TAG[b.status] || [0, b.status])[1]}</span></td></tr>`).join('')}</tbody>
+                <tfoot><tr style="background:var(--surface-2);font-weight:800"><td colspan="4">الإجمالي</td><td>${s.nights}</td><td>${money(s.gross)}</td><td>${money(s.fees)}</td><td>${money(s.revenue)}</td><td></td></tr></tfoot></table>`
+                : emptyBox('📭', 'لا حجوزات في هذا الشهر', 'جرّب شهراً آخر');
+        }
+    }
+
+    function sourceColor(src) {
+        return { gathern: 'var(--src-gathern)', airbnb: 'var(--src-airbnb)', whatsapp: 'var(--src-whatsapp)', ical: 'var(--info)', block: 'var(--src-block)' }[src] || 'var(--brand)';
+    }
+
+    function bindReports() {
+        if (!$('#rep-mode')) return;
+        $$('#rep-mode button').forEach((b) => b.addEventListener('click', () => { report.mode = b.dataset.mode; renderReports(); }));
+        $('#rep-year').addEventListener('change', (e) => { report.year = Number(e.target.value); renderReports(); });
+        $('#rep-month').addEventListener('change', (e) => { report.month = Number(e.target.value); renderReports(); });
+        $('#btn-rep-pdf').addEventListener('click', () => exportReport('print'));
+        $('#btn-rep-html').addEventListener('click', () => exportReport('html'));
+        $('#btn-rep-csv').addEventListener('click', exportReportCSV);
+    }
+
+    /* ---- المستشار الذكي ---- */
+    const roundPrice = (v) => Math.max(50, Math.round(v / 5) * 5);
+
+    /* صيغة العدد العربية: واحد، اثنان، 3–10 جمع، 11+ مفرد منصوب */
+    function countLbl(n, one, two, few, many) {
+        if (n === 1) return one;
+        if (n === 2) return two;
+        return `${n} ${n >= 3 && n <= 10 ? few : many}`;
+    }
+    const nightsLbl = (n) => countLbl(n, 'ليلة واحدة', 'ليلتان', 'ليالٍ', 'ليلة');
+
+    function buildAdvice() {
+        const today = todayISO();
+        const items = [];
+        const p30 = occupancyIn(addDays(today, -30), addDays(today, -1));
+        const p90 = occupancyIn(addDays(today, -90), addDays(today, -1));
+        const n14 = occupancyIn(today, addDays(today, 13));
+        const n30 = occupancyIn(today, addDays(today, 29));
+        const rates = realizedRates(addDays(today, -90), addDays(today, -1));
+        const r90 = rangeStats(addDays(today, -90), addDays(today, -1));
+        const r180 = rangeStats(addDays(today, -180), addDays(today, -1));
+        const wd = pricingInfo.weekday, we = pricingInfo.weekend;
+        const hasPrice = wd > 0;
+        const enoughData = p90.booked >= 10;   // أقل من 10 ليالٍ في 90 يوماً لا يكفي لاستنتاج اتجاه
+
+        /* 1) التحصيل: إيرادات غير مسجَّلة أو غير مؤكدة */
+        const incomplete = incompleteBookings().filter((x) => x.missing.indexOf('المبلغ') !== -1);
+        if (incomplete.length) {
+            const nights = incomplete.reduce((s, x) => s + nightsBetween(x.b.checkin, x.b.checkout), 0);
+            const est = nights * (rates.all || wd || 0);
+            items.push({ level: 'collect', icon: '💸', title: `${countLbl(incomplete.length, 'حجز واحد', 'حجزان', 'حجوزات', 'حجزاً')} من المنصات بلا مبلغ`,
+                body: `${nightsLbl(nights)} غير مسجَّلة الإيراد${est ? ` — تقديرها نحو ${money(est)} بسعر الليلة المحقَّق` : ''}. التقارير وصافي الربح تنقص بهذا المبلغ حتى يُكمَل.`,
+                action: 'أدخل المبالغ من الفواتير/تطبيق المنصة', cta: 'complete' });
+        }
+        const pendingSoon = realBookings().filter((b) => b.status === 'pending' && b.checkin >= today && b.checkin <= addDays(today, 7));
+        if (pendingSoon.length) {
+            items.push({ level: 'collect', icon: '⏳', title: `${countLbl(pendingSoon.length, 'حجز واحد', 'حجزان', 'حجوزات', 'حجزاً')} بانتظار التأكيد تصل خلال أسبوع`,
+                body: pendingSoon.map((b) => `${b.guest || 'ضيف'} (${fmtDateNoYear(b.checkin)} • ${money(b.total)})`).join('، ') + '.',
+                action: 'أكّد الحجز واطلب العربون أو كامل المبلغ قبل الوصول' });
+        }
+        const pendingPast = realBookings().filter((b) => b.status === 'pending' && b.checkout <= today);
+        if (pendingPast.length) {
+            const sum = pendingPast.reduce((s, b) => s + bookingNet(b), 0);
+            items.push({ level: 'collect', icon: '🧾', title: `${countLbl(pendingPast.length, 'حجز منتهٍ لم يُؤكد', 'حجزان منتهيان لم يُؤكدا', 'حجوزات منتهية لم تُؤكد', 'حجزاً منتهياً لم يُؤكد')}`,
+                body: `قيمتها ${money(sum)}. إن استُلم المبلغ حدّث الحالة إلى «مؤكد/منتهٍ»، وإلا فهي ديون تحتاج متابعة.`,
+                action: 'راجع الاستلام وحدّث حالة الحجز' });
+        }
+        const overdue = state.expenses.filter((e) => e.status === 'due' && e.dueDate && e.dueDate < today);
+        const due = state.expenses.filter((e) => e.status === 'due');
+        if (overdue.length) {
+            items.push({ level: 'warn', icon: '⚠️', title: `${countLbl(overdue.length, 'فاتورة متأخرة', 'فاتورتان متأخرتان', 'فواتير متأخرة', 'فاتورة متأخرة')} عن الاستحقاق`,
+                body: overdue.map((e) => `${e.category} ${money(e.amount)} (استحقت ${fmtDateNoYear(e.dueDate)})`).join('، ') + '.',
+                action: 'سدّدها لتجنّب انقطاع الخدمة أو غرامات' });
+        } else if (due.length) {
+            items.push({ level: 'info', icon: '🧾', title: `${countLbl(due.length, 'فاتورة مستحقة', 'فاتورتان مستحقتان', 'فواتير مستحقة', 'فاتورة مستحقة')} بقيمة ${money(due.reduce((s, e) => s + Number(e.amount || 0), 0))}`,
+                body: 'لم يحن موعدها بعد — مدرجة في صافي الربح بالفعل.', action: '' });
+        }
+        const noFee = realBookings().filter((b) => ['gathern', 'airbnb'].indexOf(b.source) !== -1 && Number(b.total) > 0 && !bookingCommissionAmount(b) && b.checkin >= addDays(today, -365));
+        if (noFee.length) {
+            const estFee = noFee.reduce((s, b) => s + bookingCommission(b), 0);
+            items.push({ level: 'warn', icon: '🏷️', title: `${countLbl(noFee.length, 'حجز منصة', 'حجزا منصة', 'حجوزات منصات', 'حجز منصة')} بلا عمولة مسجَّلة`,
+                body: `الإيراد الواصل يبدو أعلى من الحقيقة بنحو ${money(estFee)} (العمولة المتوقعة بإعدادات المنصات).`,
+                action: 'الإعدادات ← عمولة المنصات ← «إعادة حساب عمولات الحجوزات»' });
+        }
+
+        /* 2) التسعير */
+        const strong = n30.pct >= 75 && p30.pct >= 70;
+        const weak = n30.pct <= 30 && p30.pct <= 50 && enoughData;
+        if (!hasPrice) {
+            items.push({ level: 'info', icon: 'ℹ️', title: 'السعر المعلن غير متاح', body: 'لم أستطع قراءة سعر الليلة الحالي من القاعدة أو ملف الموقع، فالتوصيات أدناه نِسَبية بلا أرقام مقترحة.', action: '' });
+        }
+        if (strong) {
+            items.push({ level: 'up', icon: '📈', title: 'الطلب مرتفع — ارفع السعر',
+                body: `الإشغال ${p30.pct}% في آخر 30 يوماً و${n30.pct}% محجوز مسبقاً للثلاثين القادمة. الطلب يتحمّل زيادة 10–15% دون خسارة ليالٍ.`,
+                action: hasPrice ? `اقتراح: وسط الأسبوع ${roundPrice(wd * 1.1)} بدل ${wd} • الويكند ${roundPrice(we * 1.12)} بدل ${we}` : 'ارفع السعر 10–15%' });
+        } else if (weak) {
+            items.push({ level: 'down', icon: '📉', title: 'الطلب ضعيف — خفّض السعر مؤقتاً أو نشّط العروض',
+                body: `الإشغال ${p30.pct}% في آخر 30 يوماً و${n30.pct}% فقط محجوز للثلاثين القادمة. ليلة فارغة إيرادها صفر؛ خصم 10% يُستردّ بليلة إضافية واحدة من كل عشر.`,
+                action: hasPrice ? `اقتراح: وسط الأسبوع ${roundPrice(wd * 0.9)} بدل ${wd} • أبقِ الويكند ${we} إن كان إشغاله ${p90.weekendPct}% جيداً` : 'خفّض 10% وفعّل خصم الإقامة الأسبوعية' });
+        }
+        if (enoughData && p90.weekendPct >= 80 && p90.weekdayPct <= 50) {
+            items.push({ level: 'up', icon: '🎯', title: 'الويكند ممتلئ ووسط الأسبوع فارغ — سعّر كل نوع على حدة',
+                body: `إشغال الويكند ${p90.weekendPct}% مقابل ${p90.weekdayPct}% لوسط الأسبوع في آخر 90 يوماً.`,
+                action: hasPrice ? `ارفع الويكند إلى ${roundPrice(we * 1.1)} وقدّم خصم وسط الأسبوع ${roundPrice(wd * 0.9)}` : 'ارفع الويكند 10% وخفّض وسط الأسبوع 10%' });
+        } else if (enoughData && p90.weekendPct >= 85 && !strong) {
+            items.push({ level: 'up', icon: '🎯', title: 'الويكند شبه ممتلئ — ارفع سعر الويكند فقط',
+                body: `إشغال ليالي الخميس والجمعة ${p90.weekendPct}% في آخر 90 يوماً.`,
+                action: hasPrice ? `اقتراح: الويكند ${roundPrice(we * 1.1)} بدل ${we}` : 'ارفع الويكند 10%' });
+        }
+        if (hasPrice && rates.nights >= 10) {
+            if (rates.weekday > wd * 1.1) {
+                items.push({ level: 'up', icon: '💹', title: 'الضيوف يدفعون أكثر من سعرك المعلن',
+                    body: `سعر ليلة وسط الأسبوع المحقَّق ${money(rates.weekday)} مقابل المعلن ${money(wd)} — السوق يقبل سعراً أعلى.`,
+                    action: `ارفع المعلن إلى ${roundPrice(rates.weekday)}` });
+            } else if (rates.all < wd * 0.85) {
+                items.push({ level: 'warn', icon: '🔻', title: 'سعر الليلة المحقَّق أقل من المعلن بوضوح',
+                    body: `المحقَّق ${money(rates.all)} مقابل ${money(wd)} معلناً. غالباً خصومات المنصات أو عروض الإقامة الطويلة تأكل السعر.`,
+                    action: 'راجع الخصومات التلقائية في جاذر إن وAirbnb' });
+            }
+        }
+        const gaps = freeGaps(today, addDays(today, 29));
+        const bigGap = gaps.find((g) => g.nights >= 5 && g.from <= addDays(today, 10));
+        if (bigGap && !weak) {
+            items.push({ level: 'down', icon: '🕳️', title: `فجوة ${nightsLbl(bigGap.nights)} قريبة بلا حجز`,
+                body: `من ${fmtDateNoYear(bigGap.from)} إلى ${fmtDateNoYear(bigGap.to)}. الليالي القريبة تُباع بخصم أفضل من أن تبقى فارغة.`,
+                action: hasPrice ? `خصم آخر لحظة 10–15% لهذه التواريخ (نحو ${roundPrice(wd * 0.87)})` : 'خصم آخر لحظة 10–15% لهذه التواريخ' });
+        }
+        const oneNight = gaps.filter((g) => g.nights === 1).length;
+        if (oneNight >= 3) {
+            items.push({ level: 'info', icon: '🧩', title: `${nightsLbl(oneNight)} مفردة عالقة بين حجوزات الشهر القادم`,
+                body: 'الفجوة بليلة واحدة لا تُحجز إلا إن سمحت بالإقامة ليلة واحدة.', action: 'فعّل «الحد الأدنى ليلة واحدة» للفجوات القصيرة في المنصات' });
+        }
+        if (r180.gross && r180.fees / r180.gross >= 0.12) {
+            const share = Math.round((r180.fees / r180.gross) * 100);
+            items.push({ level: 'warn', icon: '🏦', title: `المنصات تأخذ ${share}% من إيراداتك`,
+                body: `${money(r180.fees)} عمولات في آخر 6 أشهر. كل ضيف يعود للحجز عبر الموقع أو واتساب يوفّر عمولته كاملة.`,
+                action: 'أرسل رابط الموقع للضيوف السابقين مع خصم مباشر 5% — أرخص لك من العمولة' });
+        }
+        if (r90.revenue > 0 && r90.expenses / r90.revenue >= 0.4) {
+            items.push({ level: 'warn', icon: '🧹', title: `المصاريف تلتهم ${Math.round((r90.expenses / r90.revenue) * 100)}% من الإيراد الواصل`,
+                body: `${money(r90.expenses)} مصاريف مقابل ${money(r90.revenue)} إيراد في 90 يوماً.`,
+                action: r90.count && r90.nights / r90.count < 2 ? 'متوسط الإقامة أقل من ليلتين — كل حجز قصير يكلّف نظافة كاملة: ارفع الحد الأدنى إلى ليلتين أو أضف رسوم نظافة' : 'راجع بنود النظافة والكهرباء في الفواتير' });
+        }
+        const last3 = rangeStats(addDays(today, -90), addDays(today, -1)).revenue;
+        const prev3 = rangeStats(addDays(today, -180), addDays(today, -91)).revenue;
+        if (prev3 > 0 && last3 > 0) {
+            const d = pctDelta(last3, prev3);
+            if (d <= -15) items.push({ level: 'warn', icon: '📊', title: `الإيراد تراجع ${Math.abs(d)}% عن الربع السابق`, body: `${money(last3)} في آخر 90 يوماً مقابل ${money(prev3)} قبلها.`, action: 'راجع التقييمات والصور والسعر مقارنة بالوحدات المجاورة' });
+            else if (d >= 15) items.push({ level: 'ok', icon: '🚀', title: `الإيراد نما ${d}% عن الربع السابق`, body: `${money(last3)} في آخر 90 يوماً مقابل ${money(prev3)} قبلها — الاتجاه صاعد.`, action: '' });
+        }
+        // المناسبات: أسعار خاصة قادمة بلا حجوزات
+        (pricingInfo.overrides || []).forEach((o) => {
+            if (!o.from || o.from < today || o.from > addDays(today, 45)) return;
+            const occ = occupancyIn(o.from, o.to);
+            if (occ.pct === 0 && o.from <= addDays(today, 14)) {
+                items.push({ level: 'down', icon: '🎪', title: `${o.label || 'سعر المناسبة'} يبدأ خلال أسبوعين بلا أي حجز`,
+                    body: `السعر الخاص ${money(o.price)} لليالي ${fmtDateNoYear(o.from)} ← ${fmtDateNoYear(o.to)} لم يجلب حجزاً بعد.`, action: `خفّضه تدريجياً (مثلاً ${roundPrice(o.price * 0.85)}) قبل فوات الموعد` });
+            }
+        });
+        if (!enoughData && !items.length) {
+            items.push({ level: 'info', icon: '🌱', title: 'البيانات ما زالت قليلة', body: `${nightsLbl(p90.booked)} فقط في آخر 90 يوماً. التوصيات تصبح أدق بعد نحو 10 ليالٍ محجوزة.`, action: '' });
+        }
+        if (!items.some((x) => x.level !== 'ok' && x.level !== 'info')) {
+            items.unshift({ level: 'ok', icon: '✅', title: 'الأداء متوازن — لا تغيير مطلوب على الأسعار الآن',
+                body: `إشغال ${p30.pct}% في آخر 30 يوماً و${n30.pct}% للقادم، وسعر الليلة المحقَّق ${money(rates.all)}.`, action: '' });
+        }
+
+        const order = { collect: 0, up: 1, down: 2, warn: 3, ok: 4, info: 5 };
+        items.sort((a, b) => order[a.level] - order[b.level]);
+
+        // توقّع نهاية الشهر والسنة
+        const y = _rn.getFullYear(), m = _rn.getMonth();
+        const mLast = new Date(y, m + 1, 0).getDate();
+        const mm = String(m + 1).padStart(2, '0');
+        const monthR = rangeStats(`${y}-${mm}-01`, `${y}-${mm}-${mLast}`);
+        const ytd = rangeStats(`${y}-01-01`, `${y}-12-31`);
+        const monthsLeft = 11 - m;
+        // توقّع السنة = المحقَّق والمؤكد حتى الآن + متوسط الربع الأخير × الأشهر المتبقية (تقدير خطّي بسيط)
+        const avg3 = (last3 || 0) / 3;
+        const forecastYear = ytd.revenue + (monthsLeft > 0 ? avg3 * monthsLeft : 0);
+
+        return {
+            items,
+            metrics: [
+                { label: 'إشغال آخر 30 يوماً', value: p30.pct + '%', note: `ويكند ${p30.weekendPct}% • أسبوع ${p30.weekdayPct}%` },
+                { label: 'محجوز للثلاثين القادمة', value: n30.pct + '%', note: `${n30.booked} ليلة • أسبوعان: ${n14.pct}%` },
+                { label: 'سعر الليلة المحقَّق (90 يوماً)', value: rates.all ? money(rates.all) : '—', note: hasPrice ? `المعلن ${wd} / ${we} (${pricingInfo.origin})` : 'السعر المعلن غير متاح' },
+                { label: 'توقّع إيراد هذا الشهر', value: money(monthR.revenue), note: `${monthR.count} حجز بتاريخ وصول في الشهر` },
+                { label: `توقّع إيراد ${y}`, value: money(forecastYear), note: monthsLeft ? `المحقَّق ${money(ytd.revenue)} + متوسط الربع الأخير × ${monthsLeft} شهر` : `مكتمل: ${money(ytd.revenue)}` },
+                { label: 'حصة العمولات (6 أشهر)', value: (r180.gross ? Math.round((r180.fees / r180.gross) * 100) : 0) + '%', note: money(r180.fees) },
+            ],
+        };
+    }
+
+    function renderAdviceMetrics(metrics) {
+        const z = $('#advisor-metrics');
+        if (!z) return;
+        z.innerHTML = metrics.map((x) => `<div class="ad-metric"><small>${x.label}</small><b>${x.value}</b><span>${x.note}</span></div>`).join('');
+    }
+
+    const LEVEL_TAG = { collect: ['tag-brand', 'تحصيل'], up: ['tag-ok', 'رفع السعر'], down: ['tag-info', 'خفض/عرض'], warn: ['tag-warn', 'تنبيه'], ok: ['tag-ok', 'جيد'], info: ['tag-mute', 'معلومة'] };
+
+    function renderAdviceList(items, full) {
+        return items.map((a) => `
+            <div class="advice" data-level="${a.level}">
+                <div class="ad-ic">${a.icon}</div>
+                <div class="ad-body">
+                    <h4>${escapeHtml(a.title)} <span class="tag ${LEVEL_TAG[a.level][0]}">${LEVEL_TAG[a.level][1]}</span></h4>
+                    ${full || a.level !== 'info' ? `<p>${escapeHtml(a.body)}</p>` : ''}
+                    ${a.action ? `<div class="ad-action">👉 ${escapeHtml(a.action)}${a.cta === 'complete' ? ' <button class="btn btn-primary btn-sm" data-advice-complete>إكمال الآن</button>' : ''}</div>` : ''}
+                </div>
+            </div>`).join('');
+    }
+
+    function bindAdviceActions(zone) {
+        if (!zone) return;
+        $$('[data-advice-complete]', zone).forEach((b) => b.addEventListener('click', () => runIntent('complete')));
+    }
+
+    function renderAdvisorPreview() {
+        const card = $('#advisor-card');
+        if (!card || !bookingsLoaded) return;
+        const { items } = buildAdvice();
+        const top = items.filter((x) => x.level !== 'info').slice(0, 3);
+        card.hidden = !top.length;
+        if (!top.length) return;
+        const actionable = items.filter((x) => ['collect', 'up', 'down', 'warn'].indexOf(x.level) !== -1).length;
+        $('#advisor-count').textContent = actionable ? `${actionable} ${actionable === 1 ? 'توصية' : 'توصيات'}` : 'لا إجراء مطلوب';
+        $('#advisor-count').className = 'tag ' + (actionable ? 'tag-warn' : 'tag-ok');
+        $('#advisor-zone').innerHTML = renderAdviceList(top, false);
+        bindAdviceActions($('#advisor-zone'));
+    }
+
+    /* ---- التصدير ---- */
+    function csvCell(v) {
+        const s = String(v == null ? '' : v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }
+
+    function exportReportCSV() {
+        const { from, to, label } = periodBounds();
+        const s = periodStats(from, to);
+        const n = (v) => round2(v);
+        const lines = [];
+        lines.push(['تقرير', label, `${from} → ${to}`]);
+        lines.push(['الإجمالي', n(s.gross)], ['العمولات', n(s.fees)], ['الإيراد الواصل', n(s.revenue)], ['المصاريف', n(s.expenses)], ['صافي الربح', n(s.net)],
+            ['عدد الحجوزات', s.count], ['الليالي', s.nights], ['نسبة الإشغال %', s.occ.pct], ['متوسط سعر الليلة', n(s.adr)]);
+        lines.push([]);
+        if (report.mode === 'yearly') {
+            lines.push(['الشهر', 'حجوزات', 'ليالي', 'إشغال %', 'الإجمالي', 'العمولة', 'الواصل', 'المصاريف', 'الصافي']);
+            monthRows(report.year).forEach((r) => lines.push([r.long, r.count, r.nights, r.occ, n(r.gross), n(r.fees), n(r.rev), n(r.exp), n(r.net)]));
+            lines.push([]);
+        }
+        lines.push(['المصدر', 'حجوزات', 'ليالي', 'الإجمالي', 'العمولة', 'الواصل']);
+        s.sources.forEach((x) => lines.push([SOURCE_LABEL[x.source] || x.source, x.count, x.nights, n(x.gross), n(x.fees), n(x.net)]));
+        lines.push([]);
+        lines.push(['الضيف', 'المصدر', 'الوصول', 'المغادرة', 'الليالي', 'الإجمالي', 'العمولة', 'الواصل', 'الحالة', 'ملاحظة']);
+        s.bookings.forEach((b) => lines.push([b.guest || 'ضيف', SOURCE_LABEL[b.source] || b.source, b.checkin, b.checkout, nightsBetween(b.checkin, b.checkout),
+            n(b.total), n(bookingCommissionAmount(b)), n(bookingNet(b)), (STATUS_TAG[b.status] || [0, b.status])[1], b.note || '']));
+        lines.push([]);
+        lines.push(['توصيات المستشار الذكي']);
+        buildAdvice().items.forEach((a) => lines.push([LEVEL_TAG[a.level][1], a.title, a.body, a.action]));
+        const csv = '﻿' + lines.map((r) => r.map(csvCell).join(',')).join('\r\n');
+        download(`report-${report.mode === 'yearly' ? report.year : `${report.year}-${String(report.month + 1).padStart(2, '0')}`}.csv`, csv, 'text/csv;charset=utf-8');
+        toast('تم تصدير ملف Excel (CSV)');
+    }
+
+    /* نسخة مستقلة للطباعة/PDF: تنسيق كامل داخل الملف ولا تعتمد على ملفات الموقع */
+    function buildReportHTML() {
+        const { from, to, label } = periodBounds();
+        const s = periodStats(from, to);
+        const c = REPORT_COLORS;
+        const prop = state.properties[0] || {};
+        const today = todayISO();
+        const adv = buildAdvice();
+        const tile = (ic, lbl, val, foot, color) => `<div class="t" style="--c:${color}"><div class="tl">${ic} ${lbl}</div><div class="tv">${val}</div><div class="tf">${foot}</div></div>`;
+        const levelColor = { collect: c.brand, up: c.ok, down: c.info, warn: c.warn, ok: c.ok, info: c.muted };
+
+        let chart = '';
+        let table = '';
+        if (report.mode === 'yearly') {
+            const rows = monthRows(report.year);
+            chart = `<h2>الأداء الشهري</h2>${cashflowSVG(rows.map((r) => ({ label: r.label, rev: r.rev, exp: r.exp, dim: r.from > today })), c)}${CHART_LEGEND(c)}`;
+            table = `<h2>التفصيل الشهري</h2><table><thead><tr><th>الشهر</th><th>حجوزات</th><th>ليالي</th><th>إشغال</th><th>الإجمالي</th><th>العمولة</th><th>الواصل</th><th>المصاريف</th><th>الصافي</th></tr></thead><tbody>
+                ${rows.map((r) => `<tr><td><b>${escapeHtml(r.long)}</b></td><td>${r.count}</td><td>${r.nights}</td><td>${r.occ}%</td><td>${money(r.gross)}</td><td>${money(r.fees)}</td><td><b>${money(r.rev)}</b></td><td>${money(r.exp)}</td><td style="color:${r.net >= 0 ? c.ok : c.danger}"><b>${money(r.net)}</b></td></tr>`).join('')}
+                </tbody><tfoot><tr><td>الإجمالي</td><td>${s.count}</td><td>${s.nights}</td><td>${s.occ.pct}%</td><td>${money(s.gross)}</td><td>${money(s.fees)}</td><td>${money(s.revenue)}</td><td>${money(s.expenses)}</td><td>${money(s.net)}</td></tr></tfoot></table>`;
+        } else {
+            const cells = [];
+            const srcHex = { gathern: '#6d28d9', airbnb: '#ff5a5f', whatsapp: '#25d366', ical: c.info, block: '#2563eb' };
+            for (let d = from; d <= to; d = addDays(d, 1)) {
+                const b = s.occ.map.get(d);
+                cells.push(`<div class="d" style="${b ? `background:${srcHex[b.source] || c.brand};color:#fff;border-color:transparent` : ''}">${Number(d.slice(8))}</div>`);
+            }
+            chart = `<h2>أيام الشهر</h2><div class="days">${cells.join('')}</div>
+                <div class="chart-legend" style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;font-weight:600">
+                    <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${c.brand}"></i> مباشر</span>
+                    <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#6d28d9"></i> جاذر إن</span>
+                    <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ff5a5f"></i> Airbnb</span>
+                    <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#25d366"></i> واتساب</span>
+                    <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#eceff4;border:1px solid #ddd"></i> متاح</span></div>`;
+            table = `<h2>حجوزات الشهر</h2>` + (s.bookings.length ? `<table><thead><tr><th>الضيف</th><th>المصدر</th><th>الوصول</th><th>المغادرة</th><th>الليالي</th><th>الإجمالي</th><th>العمولة</th><th>الواصل</th><th>الحالة</th></tr></thead><tbody>
+                ${s.bookings.map((b) => `<tr><td><b>${escapeHtml(b.guest || 'ضيف')}</b></td><td>${escapeHtml(SOURCE_LABEL[b.source] || b.source)}</td><td>${fmtDateNoYear(b.checkin)}</td><td>${fmtDateNoYear(b.checkout)}</td><td>${nightsBetween(b.checkin, b.checkout)}</td><td>${money(b.total)}</td><td>${money(bookingCommissionAmount(b))}</td><td><b>${money(bookingNet(b))}</b></td><td>${(STATUS_TAG[b.status] || [0, b.status])[1]}</td></tr>`).join('')}
+                </tbody><tfoot><tr><td colspan="4">الإجمالي</td><td>${s.nights}</td><td>${money(s.gross)}</td><td>${money(s.fees)}</td><td>${money(s.revenue)}</td><td></td></tr></tfoot></table>` : '<p class="muted">لا حجوزات في هذا الشهر.</p>');
+        }
+
+        const sources = s.sources.length ? `<table><thead><tr><th>المصدر</th><th>حجوزات</th><th>ليالي</th><th>الإجمالي</th><th>العمولة</th><th>الواصل</th><th>الحصة</th></tr></thead><tbody>
+            ${s.sources.map((x) => `<tr><td><b>${escapeHtml(SOURCE_LABEL[x.source] || x.source)}</b></td><td>${x.count}</td><td>${x.nights}</td><td>${money(x.gross)}</td><td>${money(x.fees)}</td><td><b>${money(x.net)}</b></td><td>${s.gross ? Math.round((x.gross / s.gross) * 100) : 0}%</td></tr>`).join('')}</tbody></table>` : '<p class="muted">لا حجوزات.</p>';
+
+        const advice = adv.items.map((a) => `<div class="adv" style="--c:${levelColor[a.level]}"><div class="ai">${a.icon}</div><div><h4>${escapeHtml(a.title)} <span class="lv">${LEVEL_TAG[a.level][1]}</span></h4><p>${escapeHtml(a.body)}</p>${a.action ? `<p class="act">👉 ${escapeHtml(a.action)}</p>` : ''}</div></div>`).join('');
+        const metrics = adv.metrics.map((x) => `<div class="m"><small>${x.label}</small><b>${x.value}</b><span>${x.note}</span></div>`).join('');
+
+        return `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>تقرير ${escapeHtml(label)} — ${escapeHtml(prop.name || 'الشقة')}</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Cairo',system-ui,sans-serif;background:#eef1f5;color:#131720;padding:24px;line-height:1.6;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.page{max-width:960px;margin:0 auto;background:#fff;border-radius:18px;box-shadow:0 10px 40px rgba(15,23,42,.1);overflow:hidden}
+.hd{background:linear-gradient(135deg,${c.brand},#d8521c);color:#fff;padding:26px 28px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.hd h1{font-size:24px;font-weight:900;line-height:1.3}.hd p{opacity:.92;font-size:13px;font-weight:600}.hd .lg{font-size:12px;opacity:.85;text-align:start}
+.bd{padding:22px 28px}
+h2{font-size:15px;font-weight:800;margin:22px 0 10px;padding-inline-start:10px;border-inline-start:4px solid ${c.brand};line-height:1.2}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.t{border:1px solid #e2e6ec;border-radius:14px;padding:12px 14px;position:relative;overflow:hidden;background:#fff}
+.t::before{content:'';position:absolute;inset-inline-start:0;top:0;bottom:0;width:4px;background:var(--c)}
+.tl{font-size:11.5px;color:#8a94a2;font-weight:700}.tv{font-size:22px;font-weight:900;letter-spacing:-.4px;margin:2px 0}.tf{font-size:11px;color:#5a6472;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th{font-size:11px;color:#8a94a2;font-weight:700;text-align:start;padding:8px 8px;border-bottom:1px solid #e2e6ec;background:#f5f7fa}
+td{padding:8px 8px;border-bottom:1px solid #edf0f4;white-space:nowrap}tfoot td{background:#f5f7fa;font-weight:800;border-bottom:0}
+.days{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:6px}.d{aspect-ratio:1;border-radius:9px;display:grid;place-items:center;font-size:12.5px;font-weight:800;background:#eceff4;color:#8a94a2;border:1px solid #e5e8ee}
+.chart-legend span{display:inline-flex;align-items:center;gap:5px;color:#5a6472}
+.ms{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.m{background:#f5f7fa;border:1px solid #edf0f4;border-radius:12px;padding:9px 12px}.m small{display:block;font-size:10.5px;color:#8a94a2;font-weight:700}.m b{display:block;font-size:15px}.m span{font-size:10.5px;color:#5a6472;font-weight:600}
+.adv{display:flex;gap:12px;padding:11px 8px;border-bottom:1px solid #edf0f4;align-items:flex-start;break-inside:avoid}.adv:last-child{border:0}
+.ai{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0;background:#f5f7fa;border-inline-start:3px solid var(--c)}
+.adv h4{font-size:13.5px;font-weight:800}.adv .lv{font-size:10.5px;font-weight:800;color:var(--c);background:#f5f7fa;border-radius:999px;padding:2px 9px;margin-inline-start:6px}
+.adv p{font-size:12.5px;color:#5a6472;margin-top:2px}.adv .act{color:var(--c);font-weight:800}
+.muted{color:#8a94a2;font-size:12.5px}
+.ft{padding:14px 28px;border-top:1px solid #edf0f4;font-size:11px;color:#8a94a2;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.bar{display:flex;gap:8px;justify-content:center;margin:0 auto 16px;max-width:960px}
+.bar button{font-family:inherit;font-weight:800;font-size:13.5px;border:0;border-radius:12px;padding:11px 18px;cursor:pointer;background:${c.brand};color:#fff;box-shadow:0 6px 18px rgba(242,98,42,.3)}
+.bar button.g{background:#fff;color:#5a6472;box-shadow:0 2px 10px rgba(15,23,42,.08)}
+@page{size:A4;margin:12mm}
+@media print{body{background:#fff;padding:0}.page{box-shadow:none;border-radius:0;max-width:none}.bar{display:none}h2{break-after:avoid}table,.tiles{break-inside:avoid}}
+</style></head><body>
+<div class="bar"><button onclick="window.print()">🖨️ طباعة / حفظ PDF</button><button class="g" onclick="window.close()">إغلاق</button></div>
+<div class="page">
+<div class="hd"><div><h1>تقرير ${report.mode === 'yearly' ? 'سنوي' : 'شهري'} — ${escapeHtml(label)}</h1><p>${escapeHtml(prop.name || '')} • ${fmtDate(from)} ← ${fmtDate(to)}</p></div>
+<div class="lg">صدر في ${fmtDate(today)}<br>${escapeHtml(prop.license ? 'رخصة ' + prop.license : '')}</div></div>
+<div class="bd">
+<div class="tiles">
+${tile('💰', 'الإيراد الواصل', money(s.revenue), s.fees ? `إجمالي ${money(s.gross)} − عمولة ${money(s.fees)}` : `إجمالي ${money(s.gross)}`, c.ok)}
+${tile('📈', 'صافي الربح', money(s.net), `مصاريف ${money(s.expenses)} • هامش ${s.margin}%`, c.info)}
+${tile('🏠', 'الإشغال', s.occ.pct + '%', `${s.occ.booked}/${s.occ.days} ليلة • ويكند ${s.occ.weekendPct}%`, c.warn)}
+${tile('🛏️', 'متوسط سعر الليلة', money(s.adr), `${s.count} حجز • ${s.nights} ليلة`, c.brand)}
+</div>
+${chart}
+<h2>مصادر الحجوزات</h2>${sources}
+<h2>🧠 المستشار الذكي</h2><div class="ms">${metrics}</div>${advice}
+${table}
+</div>
+<div class="ft"><span>الإيراد يُنسب لتاريخ الوصول، والإشغال بالليالي الفعلية. الواصل = الإجمالي − عمولة المنصة.</span><span>RentAPA — لوحة المالك</span></div>
+</div>
+<script>window.addEventListener('load',function(){if(location.search.indexOf('print')!==-1)setTimeout(function(){window.print()},700)})</script>
+</body></html>`;
+    }
+
+    function exportReport(kind) {
+        const html = buildReportHTML();
+        const name = `report-${report.mode === 'yearly' ? report.year : `${report.year}-${String(report.month + 1).padStart(2, '0')}`}.html`;
+        if (kind === 'html') { download(name, html, 'text/html;charset=utf-8'); toast('تم تنزيل التقرير'); return; }
+        // نافذة جديدة (داخل ضغطة المستخدم فلا يمنعها المتصفح) — وفيها زر الطباعة/حفظ PDF
+        const w = window.open('', '_blank');
+        if (!w) { download(name, html, 'text/html;charset=utf-8'); toast('المتصفح منع النافذة — نُزّل التقرير ملفاً: افتحه ثم اطبعه PDF', true); return; }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        toast('افتح «طباعة» في النافذة الجديدة واختر «حفظ PDF»');
+    }
+
     function currentView() {
         const active = $('.view.active');
         return active ? active.id.replace('view-', '') : 'dashboard';
@@ -4371,7 +5072,9 @@
         bindPushCard();    // أزرار إشعارات الجوال
         bindBioCard();     // أزرار الدخول بالوجه
         bindWidgetCard();  // أداة شاشة القفل والملخص الصباحي
+        bindReports();     // التقارير الشهرية/السنوية والمستشار الذكي
         updateBadges();
+        loadPricingInfo(); // أسعار الليلة الحالية — مرجع توصيات التسعير
         // اعرض الواجهة فوراً، ثم تُحدَّث تلقائياً حالما تصل البيانات من الخادم
         const hash = location.hash.replace('#', '');
         /* روابط مباشرة من أداة الجوال والإشعارات:

@@ -1120,3 +1120,64 @@ textarea.input.compact { min-height: 0; height: 50px; }
 }
 
 .lock-back:hover { color: var(--brand); }
+
+/* ---------- 14. التقارير والمستشار الذكي ---------- */
+.rep-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.rep-pickers { display: flex; gap: 6px; }
+.rep-pickers .input { height: 36px; padding: 0 10px; min-width: 110px; font-weight: 700; }
+.rep-exports { display: flex; gap: 6px; margin-inline-start: auto; flex-wrap: wrap; }
+.rep-exports .btn svg { width: 15px; height: 15px; }
+
+/* شريط أيام الشهر: كل يوم خلية ملوّنة بمصدر الحجز */
+.rep-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 5px; }
+.rep-day {
+    aspect-ratio: 1; border-radius: 9px; display: grid; place-items: center;
+    font-size: 12px; font-weight: 800; background: var(--surface-3); color: var(--muted);
+    border: 1px solid var(--line-soft);
+}
+.rep-day.booked { color: #fff; border-color: transparent; }
+.rep-day.today { outline: 2px solid var(--text); outline-offset: 1px; }
+.rep-day.src-direct, .rep-day.src-manual, .rep-day.src-site_chat { background: var(--brand); }
+.rep-day.src-gathern { background: var(--src-gathern); }
+.rep-day.src-airbnb { background: var(--src-airbnb); }
+.rep-day.src-whatsapp { background: var(--src-whatsapp); }
+.rep-day.src-ical { background: var(--info); }
+.rep-day.src-block { background: var(--src-block); }
+
+/* مقارنات الشهر: الشهر السابق والشهر نفسه من السنة الماضية */
+.rep-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+.rep-compare > div { background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 12px; }
+.rep-compare b { display: block; font-size: 15px; margin-top: 2px; }
+.rep-compare small { font-size: 11px; color: var(--muted); font-weight: 600; }
+
+/* توصيات المستشار: شريط لوني حسب نوع التوصية */
+.advice { display: flex; gap: 12px; padding: 12px 10px; border-bottom: 1px solid var(--line-soft); align-items: flex-start; }
+.advice:last-child { border-bottom: none; }
+.advice .ad-ic {
+    width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 17px; flex-shrink: 0;
+    background: var(--ad-soft, var(--surface-3)); border-inline-start: 3px solid var(--ad-color, var(--muted));
+}
+.advice .ad-body { flex: 1; min-width: 0; }
+.advice h4 { font-size: 13.5px; font-weight: 800; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.advice p { font-size: 12.5px; color: var(--text-dim); line-height: 1.75; margin-top: 3px; }
+.advice .ad-action { margin-top: 6px; font-size: 12.5px; font-weight: 800; color: var(--ad-color, var(--text)); }
+.advice .ad-action .btn { margin-inline-start: 8px; vertical-align: middle; }
+.advice[data-level="up"] { --ad-color: var(--ok); --ad-soft: var(--ok-soft); }
+.advice[data-level="down"] { --ad-color: var(--info); --ad-soft: var(--info-soft); }
+.advice[data-level="collect"] { --ad-color: var(--brand); --ad-soft: var(--brand-soft); }
+.advice[data-level="warn"] { --ad-color: var(--warn); --ad-soft: var(--warn-soft); }
+.advice[data-level="ok"] { --ad-color: var(--ok); --ad-soft: var(--ok-soft); }
+
+/* مؤشرات المستشار المختصرة */
+.ad-metric { background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 12px; }
+.ad-metric small { font-size: 11px; color: var(--muted); font-weight: 700; display: block; }
+.ad-metric b { font-size: 16px; display: block; margin-top: 2px; }
+.ad-metric span { font-size: 11px; color: var(--text-dim); font-weight: 600; }
+
+@media (max-width: 720px) {
+    .rep-exports { margin-inline-start: 0; width: 100%; }
+    .rep-exports .btn { flex: 1 1 0; min-width: 0; }
+    .rep-pickers { width: 100%; }
+    .rep-pickers .input { flex: 1; min-width: 0; }
+    .rep-days { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+}
