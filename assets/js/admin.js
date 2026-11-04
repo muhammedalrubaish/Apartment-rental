@@ -334,7 +334,7 @@
         const properties = [
             {
                 id: 'p1', name: 'شقة السليمانية — RHSA7905', city: 'الرياض', district: 'حي السليمانية',
-                address: '7905 عبدالحميد الكاتب، السليمانية، الرياض 12245',
+                address: 'شارع أبي صالح الجيلي، السليمانية، الرياض 12245 (PM7M+9RX)',
                 rooms: 1, beds: 1, baths: 1, area: 68, floor: 'الأرضي',
                 nightly: 294, status: 'active', img: 'assets/images/living.jpg',
                 platforms: ['جاذر إن', 'Airbnb'], license: '50034291',
